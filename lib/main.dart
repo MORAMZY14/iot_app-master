@@ -12,7 +12,7 @@ import 'splash_screen.dart';  // 🔥 NEW: Import your splash screen
 import 'login_screen.dart';
 import 'app_constants.dart';
 
-const String appVersion = '1.0.34';
+const String appVersion = '1.0.35';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
