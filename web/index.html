@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="iot_app">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>Smart Home</title>
+
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+
+  <script>
+    // Your Firebase configuration
+    // Replace these values with your actual Firebase config from the Firebase Console
+    const firebaseConfig = {
+      apiKey: "AIzaSyAsgr28RWuPj4MzbO23LpayEYg1wYSJkqs",
+      authDomain: "iot-smart-home-81abd.firebaseapp.com",
+      databaseURL: "https://iot-smart-home-81abd-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "iot-smart-home-81abd",
+      storageBucket: "iot-smart-home-81abd.firebasestorage.app",
+      messagingSenderId: "899142789545",
+      appId: "1:899142789545:web:1a64f8250e9f4f6de2fcb8"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+
+    console.log('Firebase initialized successfully');
+  </script>
+</head>
+<body>
+<script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
