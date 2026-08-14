@@ -95,10 +95,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                     Text(
                       'Smart Home',
                       style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.2,
-                          ),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.2,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(

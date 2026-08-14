@@ -23,6 +23,7 @@ dependencies:
   firebase_messaging: ^15.0.4
   firebase_database: ^11.3.10
 
+
   # State Management
   provider: ^6.1.2
   flutter_riverpod: ^2.6.1
@@ -66,11 +67,30 @@ dependencies:
   mailer: ^6.1.2
   twilio_flutter: ^0.9.0
 
+  # Ellie bilingual voice assistant
+  speech_to_text: ^7.4.0
+  flutter_tts: ^4.2.5
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.13.1   # <--- Added for icon generation
 
 flutter:
   uses-material-design: true
+  # Keep the iOS lifecycle identical to the original working application.
+  # Revisit UIScene only after every native plugin in this project supports it.
+  config:
+    enable-uiscene-migration: false
+  assets:
+    - assets/images/   # <--- Fixed space after dash
+
+# 🔥 Icon configuration (add this at the very bottom)
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logo.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/images/logo.png"
