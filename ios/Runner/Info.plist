@@ -78,9 +78,12 @@
 	<key>NSContactsUsageDescription</key>
 	<string>This app needs contacts access.</string>
 
-	<!-- MICROPHONE -->
+	<!-- MICROPHONE AND SPEECH RECOGNITION -->
 	<key>NSMicrophoneUsageDescription</key>
-	<string>This app needs microphone access.</string>
+	<string>Ellie uses the microphone to understand English and Arabic voice commands.</string>
+
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Ellie converts English and Arabic speech into commands and conversation text.</string>
 
 	<!-- LOCAL NETWORK -->
 	<key>NSLocalNetworkUsageDescription</key>
@@ -92,7 +95,7 @@
 		<string>_hap._tcp</string>
 	</array>
 
-	<!-- ========== ADDED FOR BLE AND Wi‑Fi SCANNING ========== -->
+	<!-- BLUETOOTH AND WI-FI PROVISIONING -->
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>This app uses Bluetooth to connect to and control your ESP32 smart home device.</string>
 
@@ -101,9 +104,8 @@
 
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>This app needs location access to scan for nearby Wi-Fi networks when provisioning the ESP32.</string>
-	<!-- ===================================================== -->
 
-	<!-- INTERNET -->
+	<!-- INTERNET AND LOCAL ESP32 HTTP ACCESS -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
