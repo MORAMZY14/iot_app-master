@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
@@ -9,6 +8,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 
 import '../ble_service.dart';
 import 'ellie_language.dart';
+import 'offline_assistant.dart';
 
 enum EllieOutputMode { phone, esp32, both }
 
@@ -35,7 +35,7 @@ class EllieVoiceEvent {
 class EllieLocalReply {
   const EllieLocalReply({
     required this.handled,
-    required this.needsCloud,
+    required this.needsFallback,
     required this.speakerQueued,
     this.reply,
     this.offlineReply,
@@ -44,7 +44,7 @@ class EllieLocalReply {
   factory EllieLocalReply.fromJson(Map<String, dynamic> json) {
     return EllieLocalReply(
       handled: json['handled'] == true,
-      needsCloud: json['needsCloud'] == true,
+      needsFallback: json['needsFallback'] == true,
       speakerQueued: json['speakerQueued'] == true,
       reply: json['reply']?.toString(),
       offlineReply: json['offlineReply']?.toString(),
@@ -52,33 +52,22 @@ class EllieLocalReply {
   }
 
   final bool handled;
-  final bool needsCloud;
+  final bool needsFallback;
   final bool speakerQueued;
   final String? reply;
   final String? offlineReply;
 }
 
-class _CloudReply {
-  const _CloudReply(this.text, this.language);
-
-  final String text;
-  final EllieLanguage language;
-}
-
 /// Coordinates bilingual short microphone sessions, deterministic local home
-/// control, authenticated cloud conversation, and phone/ESP32 speech output.
-/// The cloud model never receives a function or endpoint that can operate a
-/// relay; hardware actions are accepted only by the ESP32's local parser.
+/// control, built-in offline replies, and phone/ESP32 speech output. It never
+/// calls a cloud assistant, remote AI model, or OpenAI endpoint.
 class EllieVoiceController {
   EllieVoiceController({
     required this.esp32BaseUri,
-    required this.cloudBaseUri,
-    required this.getIdentityToken,
+    this.assistantName = 'Ellie',
     this.bleService,
     this.outputMode = EllieOutputMode.both,
     this.requireWakeWord = true,
-    this.preferOnDeviceRecognition = true,
-    this.allowNetworkRecognitionFallback = true,
     this.conversationWindow = const Duration(seconds: 30),
     EllieLanguageMode languageMode = EllieLanguageMode.automatic,
     http.Client? httpClient,
@@ -87,26 +76,20 @@ class EllieVoiceController {
   })  : _languageMode = languageMode,
         _http = httpClient ?? http.Client(),
         _speech = speechToText ?? SpeechToText(),
-        _tts = flutterTts ?? FlutterTts(),
-        _conversationId = _newConversationId();
+        _tts = flutterTts ?? FlutterTts();
 
   final Uri esp32BaseUri;
-  final Uri? cloudBaseUri;
-  final Future<String?> Function() getIdentityToken;
+  final String assistantName;
   final BleService? bleService;
   final EllieOutputMode outputMode;
   final bool requireWakeWord;
-  final bool preferOnDeviceRecognition;
-  final bool allowNetworkRecognitionFallback;
   final Duration conversationWindow;
 
   final http.Client _http;
   final SpeechToText _speech;
   final FlutterTts _tts;
-  final String _conversationId;
   final StreamController<EllieVoiceEvent> _events =
       StreamController<EllieVoiceEvent>.broadcast();
-  final List<Map<String, String>> _chatHistory = <Map<String, String>>[];
 
   EllieLanguageMode _languageMode;
   EllieLanguage _lastDetectedLanguage = EllieLanguage.english;
@@ -129,11 +112,6 @@ class EllieVoiceController {
       outputMode == EllieOutputMode.phone || outputMode == EllieOutputMode.both;
   bool get _esp32SpeechEnabled =>
       outputMode == EllieOutputMode.esp32 || outputMode == EllieOutputMode.both;
-
-  static String _newConversationId() {
-    final random = Random.secure().nextInt(0x7fffffff).toRadixString(16);
-    return '${DateTime.now().microsecondsSinceEpoch}-$random';
-  }
 
   void setLanguageMode(EllieLanguageMode mode) {
     _languageMode = mode;
@@ -177,6 +155,7 @@ class EllieVoiceController {
       await _tts.setVolume(1.0);
 
       _initialized = true;
+      unawaited(_syncAssistantNameToEsp32());
       _emit(EllieVoiceEvent(
         phase: EllieVoicePhase.idle,
         language: _languageForMode(),
@@ -221,26 +200,23 @@ class EllieVoiceController {
     ));
 
     try {
-      await _listen(localeId: localeId, onDevice: preferOnDeviceRecognition);
-    } catch (firstError) {
-      if (preferOnDeviceRecognition && allowNetworkRecognitionFallback) {
-        try {
-          await _listen(localeId: localeId, onDevice: false);
-          return;
-        } catch (_) {
-          // Emit the original on-device failure below; it is usually more
-          // actionable (for example, a missing offline language pack).
-        }
-      }
+      await _listen(localeId: localeId);
+    } catch (error) {
       _emit(EllieVoiceEvent(
         phase: EllieVoicePhase.error,
         language: _activeRecognitionLanguage,
-        error: firstError,
+        error: EllieLanguageTools.pick(
+          _activeRecognitionLanguage,
+          english:
+              'Offline speech recognition is unavailable. Install the language pack or type the command instead. ($error)',
+          arabic:
+              'التعرّف على الكلام بدون إنترنت غير متاح. ثبّتي حزمة اللغة أو اكتبي الأمر بدلاً من ذلك. ($error)',
+        ),
       ));
     }
   }
 
-  Future<void> _listen({required String? localeId, required bool onDevice}) async {
+  Future<void> _listen({required String? localeId}) async {
     await _speech.listen(
       onResult: _onSpeechResult,
       localeId: localeId,
@@ -248,7 +224,7 @@ class EllieVoiceController {
       pauseFor: const Duration(seconds: 3),
       partialResults: true,
       cancelOnError: true,
-      onDevice: onDevice,
+      onDevice: true,
     );
   }
 
@@ -269,7 +245,10 @@ class EllieVoiceController {
     await _speech.stop();
     final language = EllieLanguageTools.detect(text);
     _lastDetectedLanguage = language;
-    final hasWakeWord = EllieLanguageTools.hasWakeWord(text);
+    final hasWakeWord = EllieLanguageTools.hasWakeWord(
+      text,
+      assistantName: assistantName,
+    );
     final conversationIsActive =
         DateTime.now().isBefore(_conversationActiveUntil);
 
@@ -280,8 +259,8 @@ class EllieVoiceController {
       await _deliverReply(
         EllieLanguageTools.pick(
           language,
-          english: 'Say Ellie first, then your request.',
-          arabic: 'قولي إيلي أولاً، ثم اطلبي ما تريدين.',
+          english: 'Say $assistantName first, then your request.',
+          arabic: 'قولي $assistantName أولاً، ثم اطلبي ما تريدين.',
         ),
         language: language,
         esp32AlreadyQueued: false,
@@ -317,7 +296,7 @@ class EllieVoiceController {
     }
 
     if (_looksLikeHardwareCommand(text) &&
-        (local == null || local.needsCloud)) {
+        (local == null || local.needsFallback)) {
       await _deliverReply(
         EllieLanguageTools.pick(
           language,
@@ -332,30 +311,20 @@ class EllieVoiceController {
       return;
     }
 
-    try {
-      final cloudReply = await _sendCloudChat(text, language);
-      await _deliverReply(
-        cloudReply.text,
-        language: cloudReply.language,
-        esp32AlreadyQueued: false,
-      );
-    } catch (_) {
-      final fallback = local?.offlineReply?.trim();
-      await _deliverReply(
-        fallback?.isNotEmpty == true
-            ? fallback!
-            : EllieLanguageTools.pick(
-                language,
-                english:
-                    "I'm offline right now, but local home commands still work when the controller is reachable.",
-                arabic:
-                    'أنا غير متصلة بالإنترنت الآن، لكن أوامر المنزل المحلية ستعمل عند الوصول إلى وحدة التحكم.',
-              ),
-        language: language,
-        esp32AlreadyQueued: false,
-        tryEsp32: false,
-      );
-    }
+    final espFallback = local?.offlineReply?.trim();
+    final offlineReply = espFallback?.isNotEmpty == true
+        ? OfflineAssistantReply(text: espFallback!, language: language)
+        : OfflineAssistant.replyTo(
+            text,
+            assistantName: assistantName,
+            language: language,
+          );
+    await _deliverReply(
+      offlineReply.text,
+      language: offlineReply.language,
+      esp32AlreadyQueued: false,
+      tryEsp32: false,
+    );
   }
 
   void _onSpeechResult(SpeechRecognitionResult result) {
@@ -395,14 +364,15 @@ class EllieVoiceController {
     String text,
     EllieLanguage language,
   ) async {
-    // The ESP8266SAM fallback voice is English-only. Arabic responses are
-    // returned as text first, then routed through cloud TTS for the ESP32.
+    // The common ESP8266SAM voice path is English-only. Arabic responses stay
+    // local and are spoken by an installed on-device phone voice.
     final speakLocally =
         _esp32SpeechEnabled && language == EllieLanguage.english;
     final payload = <String, dynamic>{
       'text': text,
       'language': language.code,
       'speak': speakLocally,
+      'assistantName': assistantName,
     };
 
     try {
@@ -420,58 +390,39 @@ class EllieVoiceController {
     } catch (_) {
       final ble = bleService;
       if (ble == null || !ble.isConnected) rethrow;
-      final response = await ble.sendEllieText(text, speak: speakLocally);
+      final response = await ble.sendEllieText(
+        text,
+        speak: speakLocally,
+        assistantName: assistantName,
+      );
       return EllieLocalReply.fromJson(response);
     }
   }
 
-  Future<_CloudReply> _sendCloudChat(
-    String message,
-    EllieLanguage language,
-  ) async {
-    final baseUri = cloudBaseUri;
-    if (baseUri == null) {
-      throw StateError('ELLIE_BACKEND_URL is not configured.');
-    }
-    final token = await getIdentityToken();
-    if (token == null || token.isEmpty) {
-      throw StateError('No customer identity token is available.');
+  Future<void> _syncAssistantNameToEsp32() async {
+    final payload = jsonEncode(<String, dynamic>{
+      'assistantName': assistantName,
+    });
+    try {
+      final response = await _http
+          .post(
+            esp32BaseUri.resolve('/api/assistant/name'),
+            headers: const <String, String>{'Content-Type': 'application/json'},
+            body: payload,
+          )
+          .timeout(const Duration(milliseconds: 1500));
+      if (response.statusCode >= 200 && response.statusCode < 300) return;
+    } catch (_) {
+      // BLE below is the local fallback when the controller LAN IP is unknown.
     }
 
-    final response = await _http
-        .post(
-          baseUri.resolve('/v1/ellie/chat'),
-          headers: <String, String>{
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: jsonEncode(<String, dynamic>{
-            'conversationId': _conversationId,
-            'language': language.code,
-            'message': message,
-            'history': _chatHistory,
-          }),
-        )
-        .timeout(const Duration(seconds: 25));
-
-    if (response.statusCode != 200) {
-      throw StateError('Ellie backend returned ${response.statusCode}');
+    final ble = bleService;
+    if (ble == null || !ble.isConnected) return;
+    try {
+      await ble.setAssistantName(assistantName);
+    } catch (_) {
+      // Every later assistant command includes the name and retries the sync.
     }
-    final body = _decodeObject(response.body);
-    final reply = (body['reply']?.toString() ?? '').trim();
-    if (reply.isEmpty) throw StateError('Ellie backend returned an empty reply.');
-    final replyLanguage = body['language'] == 'ar'
-        ? EllieLanguage.arabic
-        : body['language'] == 'en'
-            ? EllieLanguage.english
-            : EllieLanguageTools.detect(reply);
-
-    _chatHistory.add(<String, String>{'role': 'user', 'content': message});
-    _chatHistory.add(<String, String>{'role': 'assistant', 'content': reply});
-    while (_chatHistory.length > 10) {
-      _chatHistory.removeAt(0);
-    }
-    return _CloudReply(reply, replyLanguage);
   }
 
   Future<void> _deliverReply(
@@ -529,8 +480,9 @@ class EllieVoiceController {
   ) async {
     final clipped = text.length <= 220 ? text : text.substring(0, 220);
     if (language == EllieLanguage.arabic) {
-      await _queueCloudAudioOnEsp32(clipped, language);
-      return;
+      throw StateError(
+        'Arabic ESP32 speech needs locally stored audio; phone TTS remains offline.',
+      );
     }
 
     try {
@@ -548,53 +500,6 @@ class EllieVoiceController {
       if (ble == null || !ble.isConnected) rethrow;
       final queued = await ble.queueEllieSpeech(clipped);
       if (!queued) throw StateError('ESP32 rejected the speech request.');
-    }
-  }
-
-  Future<void> _queueCloudAudioOnEsp32(
-    String text,
-    EllieLanguage language,
-  ) async {
-    final baseUri = cloudBaseUri;
-    if (baseUri == null) {
-      throw StateError('Cloud TTS is not configured.');
-    }
-    final token = await getIdentityToken();
-    if (token == null || token.isEmpty) {
-      throw StateError('No customer identity token is available.');
-    }
-
-    final ticketResponse = await _http
-        .post(
-          baseUri.resolve('/v1/ellie/speech-ticket'),
-          headers: <String, String>{
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: jsonEncode(<String, dynamic>{
-            'text': text,
-            'language': language.code,
-          }),
-        )
-        .timeout(const Duration(seconds: 12));
-    if (ticketResponse.statusCode != 200) {
-      throw StateError('Cloud TTS ticket failed.');
-    }
-    final ticket = _decodeObject(ticketResponse.body);
-    final audioUrl = Uri.tryParse(ticket['audioUrl']?.toString() ?? '');
-    if (audioUrl == null || audioUrl.scheme != 'https') {
-      throw StateError('Cloud TTS returned an invalid audio URL.');
-    }
-
-    final espResponse = await _http
-        .post(
-          esp32BaseUri.resolve('/api/ellie/audio'),
-          headers: const <String, String>{'Content-Type': 'application/json'},
-          body: jsonEncode(<String, dynamic>{'url': audioUrl.toString()}),
-        )
-        .timeout(const Duration(milliseconds: 3500));
-    if (espResponse.statusCode < 200 || espResponse.statusCode >= 300) {
-      throw StateError('ESP32 rejected cloud audio.');
     }
   }
 

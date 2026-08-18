@@ -36,18 +36,35 @@ class EllieLanguageTools {
         : EllieLanguage.english;
   }
 
-  static bool hasWakeWord(String text) {
-    final normalized = text
+  static String _normalizeWakePhrase(String text) => text
         .toLowerCase()
         .replaceAll(_arabicDiacritics, '')
         .replaceAll('أ', 'ا')
         .replaceAll('إ', 'ا')
         .replaceAll('آ', 'ا')
-        .replaceAll('ى', 'ي');
-    final words = normalized
-        .split(RegExp(r'[\s,،.!?؟;؛:]+'))
-        .where((word) => word.isNotEmpty);
-    return words.any((word) => word == 'ellie' || word == 'ايلي');
+        .replaceAll('ى', 'ي')
+        .replaceAll(RegExp(r'[\s,،.!?؟;؛:_\-]+'), ' ')
+        .trim()
+        .replaceAll(RegExp(r'\s+'), ' ');
+
+  static bool hasWakeWord(
+    String text, {
+    String assistantName = 'Ellie',
+  }) {
+    final normalizedText = ' ${_normalizeWakePhrase(text)} ';
+    final normalizedName = _normalizeWakePhrase(assistantName);
+    if (normalizedName.isNotEmpty &&
+        normalizedText.contains(' $normalizedName ')) {
+      return true;
+    }
+
+    // Keep the bilingual aliases for the default profile so existing homes do
+    // not lose their established English or Arabic wake phrase.
+    if (normalizedName == 'ellie') {
+      return normalizedText.contains(' ellie ') ||
+          normalizedText.contains(' ايلي ');
+    }
+    return false;
   }
 
   static String pick(

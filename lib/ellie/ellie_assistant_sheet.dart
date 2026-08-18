@@ -11,15 +11,13 @@ class EllieAssistantSheet extends StatefulWidget {
   const EllieAssistantSheet({
     super.key,
     required this.esp32BaseUri,
-    required this.cloudBaseUri,
     required this.bleService,
-    required this.getIdentityToken,
+    this.assistantName = 'Ellie',
   });
 
   final Uri esp32BaseUri;
-  final Uri? cloudBaseUri;
   final BleService bleService;
-  final Future<String?> Function() getIdentityToken;
+  final String assistantName;
 
   @override
   State<EllieAssistantSheet> createState() => _EllieAssistantSheetState();
@@ -31,16 +29,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
   late final EllieVoiceController _controller;
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final List<_EllieMessage> _messages = <_EllieMessage>[
-    const _EllieMessage(
-      text: 'Hi, I’m Ellie. Say “Ellie” and your request, or type below.',
-      language: EllieLanguage.english,
-    ),
-    const _EllieMessage(
-      text: 'مرحباً، أنا إيلي. قولي «إيلي» ثم طلبك، أو اكتبي في الأسفل.',
-      language: EllieLanguage.arabic,
-    ),
-  ];
+  final List<_EllieMessage> _messages = <_EllieMessage>[];
 
   StreamSubscription<EllieVoiceEvent>? _subscription;
   EllieLanguageMode _languageMode = EllieLanguageMode.automatic;
@@ -52,10 +41,21 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
   @override
   void initState() {
     super.initState();
+    _messages.addAll(<_EllieMessage>[
+      _EllieMessage(
+        text:
+            'Hi, I’m ${widget.assistantName}. Say “${widget.assistantName}” and your request, or type below.',
+        language: EllieLanguage.english,
+      ),
+      _EllieMessage(
+        text:
+            'مرحباً، أنا ${widget.assistantName}. قولي «${widget.assistantName}» ثم طلبك، أو اكتبي في الأسفل.',
+        language: EllieLanguage.arabic,
+      ),
+    ]);
     _controller = EllieVoiceController(
       esp32BaseUri: widget.esp32BaseUri,
-      cloudBaseUri: widget.cloudBaseUri,
-      getIdentityToken: widget.getIdentityToken,
+      assistantName: widget.assistantName,
       bleService: widget.bleService,
       outputMode: EllieOutputMode.both,
       requireWakeWord: true,
@@ -119,8 +119,8 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
     if (raw != null && raw.isNotEmpty) return raw;
     return EllieLanguageTools.pick(
       event.language,
-      english: 'Ellie could not complete that request.',
-      arabic: 'لم تتمكن إيلي من إكمال هذا الطلب.',
+      english: '${widget.assistantName} could not complete that request.',
+      arabic: 'لم يتمكن ${widget.assistantName} من إكمال هذا الطلب.',
     );
   }
 
@@ -207,7 +207,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
             ),
             _buildHeader(context),
             _buildLanguageSelector(context),
-            if (widget.cloudBaseUri == null) _buildOfflineNotice(context),
+            _buildLocalNotice(context),
             Divider(height: 1, color: colors.outlineVariant),
             Expanded(
               child: ListView.builder(
@@ -223,7 +223,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
               child: Text(
-                'Ellie’s cloud voice is AI-generated · صوت إيلي السحابي مُولَّد بالذكاء الاصطناعي',
+                'On-device speech + local ESP32 commands · نطق على الجهاز وأوامر محلية للـ ESP',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: colors.onSurfaceVariant.withValues(alpha: 0.72),
@@ -254,16 +254,19 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
             child: const Icon(Icons.graphic_eq_rounded, color: Colors.white),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  'Ellie · إيلي',
-                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                  widget.assistantName,
+                  style: const TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-                SizedBox(height: 2),
-                Text(
+                const SizedBox(height: 2),
+                const Text(
                   'Smart-home assistant · مساعدة المنزل الذكي',
                   style: TextStyle(fontSize: 12),
                 ),
@@ -307,7 +310,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
     );
   }
 
-  Widget _buildOfflineNotice(BuildContext context) {
+  Widget _buildLocalNotice(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
@@ -318,8 +321,8 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
         borderRadius: BorderRadius.circular(14),
       ),
       child: Text(
-        'Offline home commands are ready. Deploy the Ellie backend and set ELLIE_BACKEND_URL for open conversation.\n'
-        'أوامر المنزل المحلية جاهزة. يلزم رابط خادم إيلي للمحادثة المفتوحة.',
+        'Local-only mode: no OpenAI, cloud assistant, or remote conversation.\n'
+        'الوضع المحلي فقط: بدون أوبن أي آي أو مساعد سحابي أو محادثة عن بُعد.',
         textAlign: TextAlign.center,
         style: TextStyle(fontSize: 12, color: colors.onSecondaryContainer),
       ),
@@ -350,20 +353,20 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
         return _event.transcript?.trim().isNotEmpty == true
             ? _event.transcript!.trim()
             : (_event.language == EllieLanguage.arabic
-                ? 'أستمع الآن… قولي «إيلي» ثم طلبك.'
-                : 'Listening… say “Ellie” and your request.');
+                ? 'أستمع الآن… قولي «${widget.assistantName}» ثم طلبك.'
+                : 'Listening… say “${widget.assistantName}” and your request.');
       case EllieVoicePhase.thinking:
         return _event.language == EllieLanguage.arabic
-            ? 'إيلي تفكّر…'
-            : 'Ellie is thinking…';
+            ? '${widget.assistantName} يفكّر…'
+            : '${widget.assistantName} is thinking…';
       case EllieVoicePhase.speaking:
         return _event.language == EllieLanguage.arabic
-            ? 'إيلي تتحدث…'
-            : 'Ellie is speaking…';
+            ? '${widget.assistantName} يتحدث…'
+            : '${widget.assistantName} is speaking…';
       case EllieVoicePhase.error:
         return _event.language == EllieLanguage.arabic
-            ? 'تحتاج إيلي إلى انتباهك.'
-            : 'Ellie needs your attention.';
+            ? '${widget.assistantName} يحتاج إلى انتباهك.'
+            : '${widget.assistantName} needs your attention.';
       case EllieVoicePhase.idle:
         return _event.warning ??
             (_event.language == EllieLanguage.arabic
@@ -388,7 +391,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
             button: true,
             label: listening
                 ? 'Stop listening · إيقاف الاستماع'
-                : 'Talk to Ellie · تحدثي إلى إيلي',
+                : 'Talk to ${widget.assistantName} · تحدث إلى ${widget.assistantName}',
             child: IconButton.filled(
               onPressed: _isBusy ? null : () => unawaited(_toggleListening()),
               style: IconButton.styleFrom(
@@ -411,7 +414,8 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => unawaited(_sendTypedMessage()),
               decoration: InputDecoration(
-                hintText: 'Message Ellie · اكتبي لإيلي',
+                hintText:
+                    'Message ${widget.assistantName} · اكتب إلى ${widget.assistantName}',
                 filled: true,
                 fillColor: colors.surfaceContainerHighest.withValues(alpha: 0.55),
                 border: OutlineInputBorder(

@@ -1,127 +1,86 @@
-# IoT Smart Home with Ellie
+# SmartHome 2.1 — room-first control with a local voice assistant
 
-This Flutter project now includes **Ellie / إيلي**, a bilingual English and
-Arabic smart-home assistant.
+This Flutter project uses the room-first dashboard and a bilingual English and
+Arabic voice assistant. The assistant now runs without OpenAI, a remote AI API,
+or a cloud conversation backend.
 
-## Included behavior
+The smart-home application still keeps its existing Firebase sign-in/device
+sync behavior. Firebase is not used to generate assistant replies, process
+speech, or store the assistant name.
 
-- Tap the Ellie waveform button in the dashboard app bar to open the assistant.
-- Speak short commands with the phone microphone or type a message.
-- Choose **Auto**, **English**, or **العربية** recognition.
-- Say “Ellie” or “إيلي” before the first voice request. The conversation stays
-  active for 30 seconds after that.
-- Deterministic home commands are processed locally by the ESP32 over Wi-Fi,
-  with the app's existing BLE service as a fallback.
-- Open-ended conversation uses the authenticated backend in `ellie_backend/`.
-- Replies use the matching English or Arabic phone TTS voice.
-- English ESP32 speech works offline. Arabic ESP32 speech uses a short-lived,
-  one-time cloud-audio ticket; no OpenAI or Firebase key is stored in firmware.
-- The cloud model is not given any tool or endpoint that can operate relays.
+## Local assistant architecture
 
-The microphone is push-to-talk. The underlying phone recognizer is intended for
-commands and short phrases, not an always-on background wake-word service.
+1. Flutter requests the phone's installed on-device speech recognizer.
+2. Recognized text is sent to the ESP32 over local Wi-Fi, with BLE fallback.
+3. The ESP32 handles deterministic room, relay, device, and sensor intents.
+4. Flutter provides built-in local replies for help, identity, time, date,
+   greetings, thanks, and unsupported requests.
+5. Replies use an installed phone TTS voice. English can also use the existing
+   ESP32 local speaker path.
 
-## 1. Fetch Flutter packages
+There is no OpenAI package, assistant server, API key, cloud TTS ticket, or
+`ELLIE_BACKEND_URL` in this version.
 
-Use a current Flutter installation, then run:
+## Room-first interface
+
+- Large visual cards show every real room and its device counts.
+- Selecting a room shows only that room's device controls.
+- Room-wide **All on** and **All off** actions are included.
+- Desktop uses side navigation; phones use bottom navigation.
+- The interior artwork is original and bundled locally.
+
+## Customer assistant names
+
+Open **Settings → Voice Assistant → Rename**. The 2–24 character name is stored
+locally on the phone, then synchronized to the ESP32 over local Wi-Fi or BLE.
+The ESP32 keeps it in local Preferences/NVS across restarts. It is used by the
+dashboard, wake phrase, bilingual prompts, firmware replies, and local commands.
+
+The default is **Ellie / إيلي**. No customer assistant name is stored in
+Firebase or sent to a remote assistant.
+
+## Offline behavior and limits
+
+- Voice recognition is forced to on-device mode; there is no network fallback.
+- Install English and Arabic speech-recognition and TTS language packs in the
+  phone settings before testing.
+- Typed commands remain available when an offline speech pack is unavailable.
+- The local assistant is deterministic, not a general generative chatbot.
+- Arabic replies are spoken by the installed phone voice. ESP32 Arabic output
+  requires known audio clips stored locally in its flash.
+- A basic ESP32 receives recognized text from Flutter. Direct microphone-based
+  command recognition requires suitable ESP32-S3 audio hardware and ESP-SR.
+
+## ESP32 integration
+
+The supplied firmware is now integrated at
+[`esp32_firmware/SmartHomeOffline/SmartHomeOffline.ino`](esp32_firmware/SmartHomeOffline/SmartHomeOffline.ino).
+It keeps the original GPIO, PCF8574, BLE, HTTP, device, sensor, and optional
+Firebase synchronization behavior while removing the assistant's cloud
+conversation and remote-audio paths. Exact libraries, pins, flashing steps, and
+local API commands are in the
+[`firmware README`](esp32_firmware/SmartHomeOffline/README.md).
+
+[`esp32_offline_assistant/`](esp32_offline_assistant/README.md) remains only as
+a small reusable module for another firmware project; the complete bundled
+sketch does not require that extra module.
+
+## Run and build
 
 ```bash
 flutter pub get
+flutter analyze
+flutter test
+flutter run
 ```
 
-The added packages are `speech_to_text` 7.4.0 and `flutter_tts` 4.2.5. This
-project targets iOS 15.0 consistently in the Podfile, Runner project, and
-Flutter framework metadata. On iOS, regenerate configuration and install pods:
+If the controller does not use the default `192.168.1.9`, pass only its local
+LAN address; this is not a server or cloud URL:
 
 ```bash
-flutter clean
-flutter pub get
-flutter build ios --config-only
-cd ios
-pod install --repo-update
+flutter run --dart-define="ESP32_LOCAL_IP=192.168.1.50"
 ```
 
-The included GitHub Actions workflow creates `iot.ipa` without code signing,
-matching the external re-signing flow used by the original project. It pins
-Flutter 3.44.2, preserves the checked-in Podfile, validates the Firebase bundle
-ID, and checks the built Runner/Flutter/App frameworks before packaging. The
-iOS target temporarily keeps the original, known-working AppDelegate lifecycle;
-automatic UIScene migration is disabled until all native plugins in this app
-can be tested together after migration. The resulting IPA must still be signed
-by the same valid certificate/provisioning process used for the working build.
-
-Install English and Arabic speech-recognition/TTS voices in the phone's system
-settings for reliable offline phone commands. Auto mode starts with the phone's
-English/Arabic locale and remembers the language detected in the latest turn;
-the explicit language buttons are best when switching languages.
-
-## 2. Flash the matching ESP32 firmware
-
-Flash `ESP32_SmartHome_Ellie_Bilingual.ino`. It keeps the existing smart-home
-APIs and adds:
-
-- `POST /api/ellie` — bilingual local intent parsing
-- `POST /api/ellie/speak` — offline English speaker queue
-- `POST /api/ellie/audio` — one-time HTTPS MP3 playback for Arabic
-- `GET /api/ellie/capabilities`
-
-The MAX98357A defaults are BCLK GPIO 26, LRC/WS GPIO 25, and DIN GPIO 27.
-Install the Arduino libraries already used by the original firmware plus
-NimBLE-Arduino, ArduinoJson, DHT sensor library, and ESP8266Audio.
-
-`ESP8266Audio` is GPL-3.0. Review its obligations before commercial firmware
-distribution. The cloud-audio downloader currently uses `setInsecure()` for a
-one-time credential-free URL, matching the existing Firebase TLS approach in
-the supplied firmware. For a production appliance, pin your backend root CA
-with `setCACert()`.
-
-## 3. Deploy the secure Ellie backend
-
-```bash
-cd ellie_backend
-npm install
-cp .env.example .env
-# Configure the environment in your deployment platform, then:
-npm test
-npm start
-```
-
-Required production values:
-
-- `OPENAI_API_KEY` — server only; never add it to Flutter or ESP32 code
-- `ELLIE_PUBLIC_BASE_URL` — the public HTTPS origin of this backend
-- Firebase Admin application-default credentials for the same Firebase project
-- `ELLIE_ALLOWED_ORIGINS` when Flutter Web is deployed
-
-`ELLIE_DEV_TOKEN` is accepted only when `NODE_ENV` is not `production`.
-
-The backend uses the OpenAI Responses API for conversation and
-`gpt-4o-mini-tts` for ESP32 Arabic speech. End users must be told that this
-cloud voice is AI-generated; the Ellie sheet includes that disclosure.
-
-## 4. Point Flutter at the backend
-
-Do not hard-code a secret. Pass only the public backend URL:
-
-```bash
-flutter run \
-  --dart-define=ELLIE_BACKEND_URL=https://ellie.example.com
-```
-
-Without this value, bilingual offline home commands and phone TTS still work;
-open conversation and Arabic ESP32 speech remain unavailable.
-
-## Commands to test
-
-English:
-
-- “Ellie, turn on the kitchen light.”
-- “Ellie, what is the temperature?”
-- “Ellie, tell me a short story.”
-
-Arabic / Egyptian Arabic:
-
-- “إيلي، شغلي نور المطبخ.”
-- “إيلي، اطفي كل الأنوار.”
-- “إيلي، درجة الحرارة كام؟”
-- “إيلي، احكيلي قصة قصيرة.”
+The project intentionally contains no private mobile signing credentials. See
+[`DEPLOYMENT.md`](DEPLOYMENT.md) for test APK, unsigned iOS IPA, web preview,
+and ESP32 integration steps.

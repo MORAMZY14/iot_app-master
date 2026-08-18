@@ -278,16 +278,27 @@ class BleService {
   Future<void> readLightStates() => refreshDevices();
 
   /// Sends a deterministic Ellie command through the ESP32's existing BLE
-  /// parser. Conversational cloud responses never use this hardware path.
+  /// parser. The assistant has no remote conversation path.
   Future<Map<String, dynamic>> sendEllieText(
     String text, {
     required bool speak,
+    required String assistantName,
   }) {
     return sendCommand({
       'cmd': 'ellie',
       'text': text,
       'speak': speak,
+      'assistantName': assistantName,
     }, timeout: AppConfig.longTimeout);
+  }
+
+  /// Persists the customer-selected wake name in ESP32 NVS over local BLE.
+  Future<bool> setAssistantName(String assistantName) async {
+    final response = await sendCommand({
+      'cmd': 'set_assistant_name',
+      'assistantName': assistantName,
+    }, timeout: AppConfig.mediumTimeout);
+    return response['ok'] == true;
   }
 
   Future<bool> queueEllieSpeech(String text) async {

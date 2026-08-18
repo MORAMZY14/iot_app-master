@@ -11,12 +11,14 @@ import 'ble_service.dart';
 import 'auth_service.dart';
 import 'app_logger.dart';
 import 'app_constants.dart';
+import 'assistant_identity.dart';
+import 'assistant_name_store.dart';
 import 'ellie/ellie_assistant_sheet.dart';
 
 // ────────────────────────────────────────────────────────────
 // 0. THEME MANAGEMENT
 // ────────────────────────────────────────────────────────────
-final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.system);
+final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.dark);
 
 // Nav index lives in a provider so theme changes don't reset it
 final selectedNavIndexProvider = StateProvider<int>((ref) => 0);
@@ -1381,8 +1383,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
       await bleService.refreshDevices().catchError((_) {});
     }
     ref.invalidate(httpDataProvider);
-
-    final authService = ref.read(authServiceProvider).requireValue;
     if (mounted) _showSnack(context, 'Refreshed ✓', color: _DT.green);
   }
 
@@ -1396,38 +1396,16 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     );
   }
 
-  Future<void> _showEllieAssistant() async {
-    String esp32Ip = AppConfig.fallbackEsp32Ip;
-    try {
-      esp32Ip = await ref.read(esp32IpProvider.future);
-    } catch (_) {
-      // BLE and the configured fallback IP remain available when cloud IP
-      // discovery is temporarily offline.
-    }
-    if (!mounted) return;
-
-    final configuredBackend = AppConfig.ellieBackendBaseUrl.trim();
-    final parsedBackend = Uri.tryParse(configuredBackend);
-    final cloudBaseUri = configuredBackend.isNotEmpty &&
-            parsedBackend != null &&
-            (parsedBackend.scheme == 'https' || parsedBackend.scheme == 'http')
-        ? parsedBackend
-        : null;
-
+  Future<void> _showEllieAssistant(String assistantName) async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (context) => EllieAssistantSheet(
-        esp32BaseUri: Uri.parse('http://$esp32Ip'),
-        cloudBaseUri: cloudBaseUri,
+        esp32BaseUri: Uri.parse('http://${AppConfig.assistantEsp32Ip}'),
+        assistantName: assistantName,
         bleService: ref.read(bleServiceProvider),
-        getIdentityToken: () async {
-          final user = FirebaseAuth.instance.currentUser;
-          if (user == null) return null;
-          return user.getIdToken();
-        },
       ),
     );
   }
@@ -1437,6 +1415,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     final bleService = ref.watch(bleServiceProvider);
     final selectedIndex = ref.watch(selectedNavIndexProvider);
     final isDesktop = ResponsiveHelper.isDesktop(context);
+    final assistantName =
+        ref.watch(assistantNameProvider).asData?.value ?? defaultAssistantName;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -1446,16 +1426,34 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
         onRefresh: _manualRefresh,
         bleStatus: bleService.currentStatus,
         onConnectBLE: () => unawaited(bleService.connect().catchError((_) {})),
-        onEllie: () => unawaited(_showEllieAssistant()),
+        assistantName: assistantName,
+        onEllie: () => unawaited(_showEllieAssistant(assistantName)),
       ),
       body: _WallpaperBackground(
         // Keep every tab alive. AnimatedSwitcher was destroying Home when moving
         // to Settings/Alerts, which could clear the cached rooms/devices while
         // Firebase/local HTTP was temporarily unavailable. IndexedStack keeps the
         // Home dashboard state stable between tab changes.
-        child: IndexedStack(
-          index: selectedIndex,
-          children: _pages,
+        child: Row(
+          children: [
+            if (isDesktop)
+              _DesktopSidebar(
+                selectedIndex: selectedIndex,
+                assistantName: assistantName,
+                onTap: (index) {
+                  ref.read(selectedNavIndexProvider.notifier).state = index;
+                },
+                onAdd: () => _showQuickActionDialog(context),
+                onAssistant: () =>
+                    unawaited(_showEllieAssistant(assistantName)),
+              ),
+            Expanded(
+              child: IndexedStack(
+                index: selectedIndex,
+                children: _pages,
+              ),
+            ),
+          ],
         ),
       ),
       floatingActionButton: isDesktop
@@ -2388,12 +2386,14 @@ class _GlassAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final BleStatus bleStatus;
   final VoidCallback onConnectBLE;
   final VoidCallback onEllie;
+  final String assistantName;
 
   const _GlassAppBar({
     required this.onRefresh,
     required this.bleStatus,
     required this.onConnectBLE,
     required this.onEllie,
+    required this.assistantName,
   });
 
   void _toggleTheme(WidgetRef ref) {
@@ -2467,7 +2467,8 @@ class _GlassAppBar extends ConsumerWidget implements PreferredSizeWidget {
                 onTap: onEllie,
                 child: Semantics(
                   button: true,
-                  label: 'Talk to Ellie · تحدثي إلى إيلي',
+                  label:
+                      'Talk to $assistantName · تحدث إلى $assistantName',
                   child: Container(
                     width: 36,
                     height: 36,
@@ -2620,6 +2621,207 @@ class _ABBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       GestureDetector(onTap: onTap, child: child);
+}
+
+class _DesktopSidebar extends StatelessWidget {
+  final int selectedIndex;
+  final String assistantName;
+  final ValueChanged<int> onTap;
+  final VoidCallback onAdd;
+  final VoidCallback onAssistant;
+
+  const _DesktopSidebar({
+    required this.selectedIndex,
+    required this.assistantName,
+    required this.onTap,
+    required this.onAdd,
+    required this.onAssistant,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const items = <(IconData, String)>[
+      (Icons.grid_view_rounded, 'Dashboard'),
+      (Icons.bolt_rounded, 'Energy'),
+      (Icons.notifications_rounded, 'Alerts'),
+      (Icons.settings_rounded, 'Settings'),
+    ];
+
+    return Container(
+      width: 226,
+      decoration: BoxDecoration(
+        color: isDark
+            ? const Color(0xFF050914).withValues(alpha: 0.78)
+            : Colors.white.withValues(alpha: 0.70),
+        border: Border(
+          right: BorderSide(
+            color: Theme.of(context)
+                .colorScheme
+                .onSurface
+                .withValues(alpha: 0.08),
+          ),
+        ),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, kToolbarHeight + 18, 16, 22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      gradient: const LinearGradient(
+                        colors: [_DT.blue, _DT.purple],
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.home_rounded,
+                      color: Colors.white,
+                      size: 21,
+                    ),
+                  ),
+                  const SizedBox(width: 11),
+                  const Text(
+                    'SmartHome',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 34),
+              for (var index = 0; index < items.length; index++) ...[
+                _DesktopNavItem(
+                  icon: items[index].$1,
+                  label: items[index].$2,
+                  selected: selectedIndex == index,
+                  onTap: () => onTap(index),
+                ),
+                const SizedBox(height: 8),
+              ],
+              const Spacer(),
+              Material(
+                color: _DT.purple.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(18),
+                child: InkWell(
+                  onTap: onAssistant,
+                  borderRadius: BorderRadius.circular(18),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.graphic_eq_rounded,
+                          color: _DT.purple,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                assistantName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const Text(
+                                'Voice assistant',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: onAdd,
+                icon: const Icon(Icons.add_rounded, size: 19),
+                label: const Text('Add room or device'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _DT.purple,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopNavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _DesktopNavItem({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: selected
+            ? _DT.purple.withValues(alpha: 0.18)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: selected
+                    ? _DT.purple.withValues(alpha: 0.28)
+                    : Colors.transparent,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 20,
+                  color: selected ? _DT.purple : Colors.grey,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: selected ? null : Colors.grey,
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 }
 
 // ────────────────────────────────────────────────────────────
@@ -3178,6 +3380,18 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     }
   }
 
+  Future<void> _setRoomDevices(List<dynamic> devices, bool state) async {
+    final targets = devices.whereType<Map>().where((device) {
+      final id = device['id']?.toString() ?? '';
+      final currentState = device['state'] as bool? ?? false;
+      return id.isNotEmpty && currentState != state;
+    }).toList(growable: false);
+
+    for (final device in targets) {
+      await _controlDevice(device['id'].toString(), state);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final padding = ResponsiveHelper.getPadding(context);
@@ -3242,35 +3456,40 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 ),
                 const SizedBox(height: 14),
                 _StatsRow(temp: temp, hum: hum, todayKw: todayKw),
-                const SizedBox(height: 18),
-                _FlameBanner(flame: flame),
-                const SizedBox(height: 18),
-                _RoomsHeader(
+                if (flame) ...[
+                  const SizedBox(height: 18),
+                  _FlameBanner(flame: flame),
+                ],
+                const SizedBox(height: 24),
+                _RoomGallery(
                   selectedRoom: selectedRoom,
                   onRoomSelected: (r) => setState(() => _selectedRoom = r),
                   rooms: rooms,
+                  devices: devicesList,
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 18),
                 if (_isLoadingDevices)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(20),
-                      child: CircularProgressIndicator(color: _DT.purple),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(99),
+                    child: const LinearProgressIndicator(
+                      color: _DT.purple,
+                      backgroundColor: Colors.transparent,
+                      minHeight: 2,
                     ),
                   )
-                else if (roomDevices.isEmpty)
+                else if (rooms.isEmpty)
                   _GCard(
                     padding: const EdgeInsets.all(30),
                     child: Column(
                       children: [
                         Icon(
-                          rooms.isEmpty ? Icons.meeting_room_outlined : Icons.devices_rounded,
+                          Icons.meeting_room_outlined,
                           size: 48,
                           color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          rooms.isEmpty ? 'No rooms yet' : 'No devices in this room',
+                          'No rooms yet',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -3279,9 +3498,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          rooms.isEmpty
-                              ? 'Tap +, then Add Room, to create your first room.'
-                              : 'Tap the + button to add a device',
+                          'Tap +, then Add Room, to create your first room.',
                           style: TextStyle(
                             fontSize: 14,
                             color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
@@ -3292,41 +3509,12 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                     ),
                   )
                 else
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: roomDevices.map((device) {
-                      final map = device as Map;
-                      final name = map['name'] as String? ?? 'Unknown';
-                      final type = map['type'] as int? ?? 0;
-                      final state = map['state'] as bool? ?? false;
-                      final moduleId = (map['moduleId'] ?? map['expanderId'] ?? 'io_1').toString();
-                      final rawChannel = map['channel'];
-                      final channel = rawChannel is num
-                          ? rawChannel.toInt()
-                          : int.tryParse(rawChannel?.toString() ?? '') ?? -1;
-                      final room = map['room'] as String? ?? '';
-                      final id = map['id'] as String? ?? '';
-
-                      final screenWidth = MediaQuery.of(context).size.width - (padding * 2);
-                      final cardWidth = isDesktop ? (screenWidth - 36) / 4 : (screenWidth - 12) / 2;
-
-                      return SizedBox(
-                        width: cardWidth,
-                        child: GestureDetector(
-                          onTap: id.isEmpty ? null : () => _controlDevice(id, !state),
-                          onLongPress: id.isEmpty ? null : () => _showDeviceOptions(id, name, moduleId, channel),
-                          child: _DynamicDeviceCard(
-                            name: name,
-                            type: type,
-                            state: state,
-                            moduleId: moduleId,
-                            channel: channel,
-                            room: room,
-                          ),
-                        ),
-                      );
-                    }).toList(),
+                  _FocusedRoomPanel(
+                    room: selectedRoom,
+                    devices: roomDevices,
+                    onToggle: _controlDevice,
+                    onOptions: _showDeviceOptions,
+                    onSetAll: (state) => _setRoomDevices(roomDevices, state),
                   ),
               ],
             ),
@@ -3932,158 +4120,703 @@ class _FlameBanner extends StatelessWidget {
 // ────────────────────────────────────────────────────────────
 // 23. ROOMS HEADER + TABS (UPDATED WITH DYNAMIC ROOMS)
 // ────────────────────────────────────────────────────────────
-class _RoomsHeader extends StatelessWidget {
+const String _roomArtAsset = 'assets/images/smart_room_ambient.png';
+
+IconData _roomIconFor(String roomName) {
+  final name = roomName.toLowerCase();
+  if (name.contains('living') || name.contains('lounge')) {
+    return Icons.weekend_rounded;
+  }
+  if (name.contains('bed') || name.contains('guest')) {
+    return Icons.bed_rounded;
+  }
+  if (name.contains('kitchen') || name.contains('dining')) {
+    return Icons.soup_kitchen_rounded;
+  }
+  if (name.contains('bath')) return Icons.bathtub_rounded;
+  if (name.contains('office') || name.contains('study')) {
+    return Icons.desktop_windows_rounded;
+  }
+  if (name.contains('garage')) return Icons.garage_rounded;
+  if (name.contains('garden') || name.contains('yard')) {
+    return Icons.yard_rounded;
+  }
+  return Icons.meeting_room_rounded;
+}
+
+Color _roomAccentFor(String roomName) {
+  const accents = <Color>[
+    Color(0xFF8B5CFF),
+    Color(0xFF4E8CFF),
+    Color(0xFFFF8F6B),
+    Color(0xFF4FD4B1),
+    Color(0xFFE26FAE),
+  ];
+  final hash = roomName.codeUnits.fold<int>(0, (sum, value) => sum + value);
+  return accents[hash % accents.length];
+}
+
+Alignment _roomArtAlignment(String roomName) {
+  const alignments = <Alignment>[
+    Alignment.centerLeft,
+    Alignment.center,
+    Alignment.centerRight,
+    Alignment(-0.45, 0),
+    Alignment(0.45, 0),
+  ];
+  final hash = roomName.codeUnits.fold<int>(0, (sum, value) => sum + value);
+  return alignments[hash % alignments.length];
+}
+
+class _RoomGallery extends StatelessWidget {
   final String selectedRoom;
   final ValueChanged<String> onRoomSelected;
   final List<String> rooms;
+  final List<dynamic> devices;
 
-  const _RoomsHeader({
+  const _RoomGallery({
     required this.selectedRoom,
     required this.onRoomSelected,
     required this.rooms,
+    required this.devices,
   });
-
-  String _getRoomEmoji(String roomName) {
-    if (roomName.contains('Living')) return '🛋️';
-    if (roomName.contains('Bed')) return '🛏️';
-    if (roomName.contains('Kitchen')) return '🍳';
-    if (roomName.contains('Bath')) return '🚿';
-    if (roomName.contains('Office')) return '💼';
-    if (roomName.contains('Dining')) return '🍽️';
-    if (roomName.contains('Garage')) return '🚗';
-    if (roomName.contains('Garden')) return '🌿';
-    if (roomName.contains('Study')) return '📚';
-    if (roomName.contains('Guest')) return '🚪';
-    return '🏠';
-  }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    if (rooms.isEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Rooms',
-                  style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: Theme.of(context).colorScheme.onSurface)),
-              Text('0 Rooms',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: _DT.purple)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.05)
-                  : Colors.black.withValues(alpha: 0.04),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, size: 16, color: _DT.purple),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'No rooms yet. Tap the + button to add a room.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
+    final width = MediaQuery.sizeOf(context).width;
+    final cardWidth = width >= 1200 ? 218.0 : width >= 600 ? 196.0 : 168.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('Rooms',
-                style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: Theme.of(context).colorScheme.onSurface)),
-            Text('${rooms.length} Rooms',
-                style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: _DT.purple)),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Your Rooms',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                  ),
+                  SizedBox(height: 3),
+                  Text(
+                    'Choose a room to see only its controls',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: _DT.purple.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(99),
+                border: Border.all(
+                  color: _DT.purple.withValues(alpha: 0.24),
+                ),
+              ),
+              child: Text(
+                '${rooms.length} ${rooms.length == 1 ? 'room' : 'rooms'}',
+                style: const TextStyle(
+                  color: _DT.purple,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
           ],
         ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 40,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: rooms.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (context, i) {
-              final name = rooms[i];
-              final selected = name == selectedRoom;
-              final emoji = _getRoomEmoji(name);
+        if (rooms.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 224,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              itemCount: rooms.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final room = rooms[index];
+                final roomDevices = devices
+                    .where((device) =>
+                        device is Map && device['room']?.toString() == room)
+                    .toList(growable: false);
+                final activeCount = roomDevices
+                    .where((device) =>
+                        device is Map && (device['state'] as bool? ?? false))
+                    .length;
+                return SizedBox(
+                  width: cardWidth,
+                  child: _RoomCard(
+                    room: room,
+                    deviceCount: roomDevices.length,
+                    activeCount: activeCount,
+                    selected: room == selectedRoom,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      onRoomSelected(room);
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
 
-              return GestureDetector(
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  onRoomSelected(name);
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+class _RoomCard extends StatelessWidget {
+  final String room;
+  final int deviceCount;
+  final int activeCount;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _RoomCard({
+    required this.room,
+    required this.deviceCount,
+    required this.activeCount,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = _roomAccentFor(room);
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$room, $deviceCount devices, $activeCount on',
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: selected
+                  ? accent.withValues(alpha: 0.95)
+                  : Colors.white.withValues(alpha: 0.10),
+              width: selected ? 2 : 1,
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.32),
+                      blurRadius: 22,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : const [],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.asset(
+                  _roomArtAsset,
+                  fit: BoxFit.cover,
+                  alignment: _roomArtAlignment(room),
+                  filterQuality: FilterQuality.medium,
+                ),
+                DecoratedBox(
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    color: selected
-                        ? (isDark ? _DT.purple : _DT.purple)
-                        : (isDark
-                        ? Colors.white.withValues(alpha: 0.07)
-                        : Colors.black.withValues(alpha: 0.05)),
-                    border: Border.all(
-                      color: selected
-                          ? _DT.purple
-                          : Colors.transparent,
-                      width: selected ? 1.5 : 0,
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        accent.withValues(alpha: selected ? 0.12 : 0.04),
+                        const Color(0x22050812),
+                        const Color(0xE8050812),
+                      ],
+                      stops: const [0, 0.42, 1],
                     ),
                   ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text(emoji, style: const TextStyle(fontSize: 14)),
-                    const SizedBox(width: 6),
-                    Text(name,
-                        style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: selected
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                            color: selected
-                                ? Colors.white
-                                : Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.6))),
-                  ]),
                 ),
-              );
-            },
+                Positioned(
+                  top: 14,
+                  left: 14,
+                  child: Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: selected
+                          ? accent.withValues(alpha: 0.88)
+                          : Colors.black.withValues(alpha: 0.42),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.24),
+                      ),
+                    ),
+                    child: Icon(
+                      _roomIconFor(room),
+                      color: Colors.white,
+                      size: 23,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 16,
+                  right: 14,
+                  bottom: 14,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        room,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '$deviceCount ${deviceCount == 1 ? 'device' : 'devices'}',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.72),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          if (activeCount > 0)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _DT.green.withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(99),
+                                border: Border.all(
+                                  color: _DT.green.withValues(alpha: 0.35),
+                                ),
+                              ),
+                              child: Text(
+                                '$activeCount on',
+                                style: const TextStyle(
+                                  color: _DT.green,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-      ],
+      ),
+    );
+  }
+}
+
+class _FocusedRoomPanel extends StatelessWidget {
+  final String room;
+  final List<dynamic> devices;
+  final Future<void> Function(String id, bool state) onToggle;
+  final void Function(
+    String id,
+    String name,
+    String moduleId,
+    int channel,
+  ) onOptions;
+  final Future<void> Function(bool state) onSetAll;
+
+  const _FocusedRoomPanel({
+    required this.room,
+    required this.devices,
+    required this.onToggle,
+    required this.onOptions,
+    required this.onSetAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surface = isDark
+        ? const Color(0xFF0C1222).withValues(alpha: 0.94)
+        : Colors.white.withValues(alpha: 0.92);
+
+    final panel = Container(
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.10)
+              : Colors.black.withValues(alpha: 0.08),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.30 : 0.10),
+            blurRadius: 30,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(29),
+        child: wide
+            ? IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(flex: 6, child: _buildHero(context, 390)),
+                    Expanded(flex: 5, child: _buildDevices(context)),
+                  ],
+                ),
+              )
+            : Column(
+                children: [
+                  _buildHero(context, 310),
+                  _buildDevices(context),
+                ],
+              ),
+      ),
+    );
+
+    return RepaintBoundary(child: panel);
+  }
+
+  Widget _buildHero(BuildContext context, double minimumHeight) {
+    final accent = _roomAccentFor(room);
+    final activeCount = devices
+        .where((device) => device is Map && (device['state'] as bool? ?? false))
+        .length;
+
+    return Container(
+      height: minimumHeight,
+      decoration: BoxDecoration(
+        image: DecorationImage(
+          image: const AssetImage(_roomArtAsset),
+          fit: BoxFit.cover,
+          alignment: _roomArtAlignment(room),
+        ),
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              accent.withValues(alpha: 0.08),
+              const Color(0x33050711),
+              const Color(0xEE050711),
+            ],
+            stops: const [0, 0.42, 1],
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(26),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: accent.withValues(alpha: 0.86),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Icon(_roomIconFor(room), color: Colors.white, size: 25),
+              ),
+              const Spacer(),
+              Text(
+                room,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 31,
+                  height: 1.05,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${devices.length} ${devices.length == 1 ? 'device' : 'devices'}  •  $activeCount on',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.72),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Quick actions',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _RoomActionButton(
+                    icon: Icons.power_rounded,
+                    label: 'All on',
+                    emphasized: true,
+                    onTap: () => unawaited(onSetAll(true)),
+                  ),
+                  _RoomActionButton(
+                    icon: Icons.power_off_rounded,
+                    label: 'All off',
+                    onTap: () => unawaited(onSetAll(false)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDevices(BuildContext context) {
+    final activeCount = devices
+        .where((device) => device is Map && (device['state'] as bool? ?? false))
+        .length;
+    return Padding(
+      padding: const EdgeInsets.all(22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Devices',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+              ),
+              Text(
+                '$activeCount active',
+                style: const TextStyle(
+                  color: _DT.green,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (devices.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 34),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.devices_other_rounded,
+                      size: 42,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.25),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'No devices in this room yet',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            for (var index = 0; index < devices.length; index++) ...[
+              _RoomDeviceRow(
+                device: Map<String, dynamic>.from(devices[index] as Map),
+                onToggle: onToggle,
+                onOptions: onOptions,
+              ),
+              if (index != devices.length - 1) const _SDivider(),
+            ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RoomActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool emphasized;
+  final VoidCallback onTap;
+
+  const _RoomActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.emphasized = false,
+  });
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: emphasized
+            ? _DT.purple
+            : Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: Colors.white, size: 19),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+class _RoomDeviceRow extends StatelessWidget {
+  final Map<String, dynamic> device;
+  final Future<void> Function(String id, bool state) onToggle;
+  final void Function(
+    String id,
+    String name,
+    String moduleId,
+    int channel,
+  ) onOptions;
+
+  const _RoomDeviceRow({
+    required this.device,
+    required this.onToggle,
+    required this.onOptions,
+  });
+
+  IconData _iconFor(int type) {
+    switch (type) {
+      case 0:
+        return Icons.lightbulb_rounded;
+      case 1:
+        return Icons.air_rounded;
+      case 2:
+        return Icons.power_settings_new_rounded;
+      case 3:
+        return Icons.electrical_services_rounded;
+      default:
+        return Icons.devices_rounded;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = device['name']?.toString() ?? 'Device';
+    final id = device['id']?.toString() ?? '';
+    final type = device['type'] is num ? (device['type'] as num).toInt() : 0;
+    final state = device['state'] as bool? ?? false;
+    final moduleId =
+        (device['moduleId'] ?? device['expanderId'] ?? 'io_1').toString();
+    final rawChannel = device['channel'];
+    final channel = rawChannel is num
+        ? rawChannel.toInt()
+        : int.tryParse(rawChannel?.toString() ?? '') ?? -1;
+    final color = state ? _DT.amber : Colors.grey;
+
+    void showOptions() {
+      if (id.isNotEmpty) onOptions(id, name, moduleId, channel);
+    }
+
+    return InkWell(
+      onLongPress: showOptions,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                color: color.withValues(alpha: state ? 0.18 : 0.10),
+                border: Border.all(color: color.withValues(alpha: 0.18)),
+              ),
+              child: Icon(_iconFor(type), color: color, size: 23),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    channel >= 0
+                        ? '${state ? 'On' : 'Off'}  •  Relay ${channel + 1}'
+                        : '${state ? 'On' : 'Off'}  •  Output not assigned',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: state ? color : Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Device settings',
+              onPressed: id.isEmpty ? null : showOptions,
+              icon: const Icon(Icons.more_horiz_rounded, size: 20),
+              visualDensity: VisualDensity.compact,
+            ),
+            Switch.adaptive(
+              value: state,
+              activeTrackColor: _DT.purple,
+              onChanged: id.isEmpty
+                  ? null
+                  : (value) => unawaited(onToggle(id, value)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -4963,6 +5696,8 @@ class _SettingsScreen extends ConsumerWidget {
     final esp32CodeAsync = ref.watch(userEsp32CodeProvider);
     final authService = ref.watch(authServiceProvider).requireValue;
     final user = authService.currentUser;
+    final assistantName =
+        ref.watch(assistantNameProvider).asData?.value ?? defaultAssistantName;
 
     void onConnectBLE() {
       unawaited(ref.read(bleServiceProvider).connect().catchError((_) {}));
@@ -4974,6 +5709,33 @@ class _SettingsScreen extends ConsumerWidget {
         await ble.refreshDevices().catchError((_) {});
       }
       ref.invalidate(httpDataProvider);
+    }
+
+    Future<bool> syncAssistantNameToController(String name) async {
+      try {
+        final response = await http
+            .post(
+              Uri.parse(
+                'http://${AppConfig.assistantEsp32Ip}/api/assistant/name',
+              ),
+              headers: const {'Content-Type': 'application/json'},
+              body: jsonEncode({'assistantName': name}),
+            )
+            .timeout(const Duration(milliseconds: 1500));
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          return true;
+        }
+      } catch (_) {
+        // Use BLE when the controller is not reachable over the local network.
+      }
+
+      final ble = ref.read(bleServiceProvider);
+      if (!ble.isConnected) return false;
+      try {
+        return await ble.setAssistantName(name);
+      } catch (_) {
+        return false;
+      }
     }
 
     void showEditCodeDialog() {
@@ -5088,6 +5850,148 @@ class _SettingsScreen extends ConsumerWidget {
           ),
         ),
       );
+    }
+
+    void showAssistantNameDialog() {
+      final rootContext = context;
+      final nameController = TextEditingController(text: assistantName);
+      String? validationError;
+
+      showDialog<void>(
+        context: rootContext,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => Dialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            backgroundColor: Colors.transparent,
+            child: _GCard(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [_DT.purple, _DT.blue],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _DT.purple.withValues(alpha: 0.3),
+                          blurRadius: 22,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.graphic_eq_rounded,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Voice Assistant Name',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Saved only on this device and used by the local wake phrase and ESP32 commands.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.4,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.58),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: nameController,
+                    autofocus: true,
+                    maxLength: 24,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: InputDecoration(
+                      labelText: 'Assistant name',
+                      hintText: 'e.g. Nova, Noor, Home Mate',
+                      errorText: validationError,
+                      prefixIcon: const Icon(Icons.mic_rounded),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onSubmitted: (_) {},
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () async {
+                            final nextName = compactAssistantName(
+                              nameController.text,
+                            );
+                            final error = validateAssistantName(nextName);
+                            if (error != null) {
+                              setDialogState(
+                                () => validationError = error,
+                              );
+                              return;
+                            }
+                            try {
+                              await ref
+                                  .read(assistantNameStoreProvider)
+                                  .save(nextName);
+                              final synced =
+                                  await syncAssistantNameToController(nextName);
+                              ref.invalidate(assistantNameProvider);
+                              if (!dialogContext.mounted) return;
+                              Navigator.pop(dialogContext);
+                              if (rootContext.mounted) {
+                                _showSnack(
+                                  rootContext,
+                                  synced
+                                      ? 'Voice assistant renamed to $nextName on the app and ESP32'
+                                      : 'Name saved. ESP32 sync will retry when the assistant opens.',
+                                  color: synced ? _DT.green : _DT.amber,
+                                );
+                              }
+                            } catch (error) {
+                              if (rootContext.mounted) {
+                                _showSnack(
+                                  rootContext,
+                                  'Could not update the assistant name: $error',
+                                  color: _DT.red,
+                                );
+                              }
+                            }
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _DT.purple,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: const Text('Save name'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ).whenComplete(nameController.dispose);
     }
 
     void showTestConnectionDialog() async {
@@ -5335,6 +6239,7 @@ class _SettingsScreen extends ConsumerWidget {
                           try {
                             await authService.signOut();
                             ref.read(selectedNavIndexProvider.notifier).state = 0;
+                            ref.invalidate(assistantNameProvider);
                             ref.invalidate(userDataProvider);
                             ref.invalidate(userEsp32CodeProvider);
                             ref.invalidate(httpDataProvider);
@@ -5407,6 +6312,17 @@ class _SettingsScreen extends ConsumerWidget {
                       }
                     },
                   ),
+                ),
+              ),
+              const _SDivider(),
+              _STile(
+                icon: Icons.record_voice_over_rounded,
+                title: 'Voice Assistant',
+                subtitle: 'Wake name: $assistantName',
+                onTap: showAssistantNameDialog,
+                trailing: _PillBtn(
+                  label: 'Rename',
+                  onTap: showAssistantNameDialog,
                 ),
               ),
               const _SDivider(),
