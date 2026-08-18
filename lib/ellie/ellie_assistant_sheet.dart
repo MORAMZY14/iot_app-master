@@ -274,6 +274,13 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
             ),
           ),
           IconButton(
+            tooltip: 'Test phone voice · اختبار صوت الهاتف',
+            onPressed: _isBusy
+                ? null
+                : () => unawaited(_controller.testPhoneVoice()),
+            icon: const Icon(Icons.volume_up_rounded),
+          ),
+          IconButton(
             tooltip: 'Close · إغلاق',
             onPressed: () => Navigator.of(context).pop(),
             icon: const Icon(Icons.close_rounded),

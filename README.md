@@ -1,4 +1,21 @@
-# SmartHome 2.1 — room-first control with a local voice assistant
+# SmartHome 2.2 — customizable rooms and local voice playback
+
+## Prototype 2.2 update
+
+- The mobile center button opens the voice assistant.
+- Add/manage room and add-device controls sit beside **Your Rooms**.
+- Every room card has a photo button. Photos can come from the gallery or
+  camera, are resized, and stay locally on that phone.
+- The selected room's large control panel uses the same custom photo.
+- iOS phone speech uses a playback audio session, so assistant speech is
+  audible when the hardware silent switch is enabled. Use the speaker icon in
+  the assistant header to test it.
+
+The current open-ended fallback is intentionally deterministic; it is not a
+trained language model. A genuine no-cloud conversational assistant requires
+an on-device model running on the phone. The ESP32 remains the safe home-command
+executor because it cannot run a useful conversational LLM. See
+`OFFLINE_AI_ARCHITECTURE.md` for the recommended design.
 
 This Flutter project uses the room-first dashboard and a bilingual English and
 Arabic voice assistant. The assistant now runs without OpenAI, a remote AI API,

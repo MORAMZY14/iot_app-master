@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -150,6 +151,20 @@ class EllieVoiceController {
         _ttsLanguages = rawTtsLanguages.map((value) => '$value').toList();
       }
       await _tts.awaitSpeakCompletion(true);
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+        await _tts.setSharedInstance(true);
+        await _tts.setIosAudioCategory(
+          IosTextToSpeechAudioCategory.playback,
+          <IosTextToSpeechAudioCategoryOptions>[
+            IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+            IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+            IosTextToSpeechAudioCategoryOptions.duckOthers,
+            IosTextToSpeechAudioCategoryOptions
+                .interruptSpokenAudioAndMixWithOthers,
+          ],
+          IosTextToSpeechAudioMode.voicePrompt,
+        );
+      }
       await _tts.setSpeechRate(0.46);
       await _tts.setPitch(1.0);
       await _tts.setVolume(1.0);
@@ -470,8 +485,27 @@ class EllieVoiceController {
     await _tts.stop();
     final locale = _bestTtsLocale(language);
     await _tts.setLanguage(locale);
+    await _tts.setVolume(1.0);
     await _tts.setSpeechRate(language == EllieLanguage.arabic ? 0.42 : 0.46);
-    await _tts.speak(text);
+    final result = await _tts.speak(text);
+    if (result != 1) {
+      throw StateError('The phone text-to-speech engine did not start.');
+    }
+  }
+
+  Future<void> testPhoneVoice() async {
+    await initialize();
+    final language = _languageForMode();
+    await _deliverReply(
+      EllieLanguageTools.pick(
+        language,
+        english: 'Voice output is working. I am $assistantName.',
+        arabic: 'الصوت يعمل الآن. أنا $assistantName.',
+      ),
+      language: language,
+      esp32AlreadyQueued: false,
+      tryEsp32: false,
+    );
   }
 
   Future<void> _speakOnEsp32(

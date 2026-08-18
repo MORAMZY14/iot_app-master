@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shimmer/shimmer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:image_picker/image_picker.dart';
 import 'ble_service.dart';
 import 'auth_service.dart';
 import 'app_logger.dart';
@@ -14,6 +16,7 @@ import 'app_constants.dart';
 import 'assistant_identity.dart';
 import 'assistant_name_store.dart';
 import 'ellie/ellie_assistant_sheet.dart';
+import 'room_image_store.dart';
 
 // ────────────────────────────────────────────────────────────
 // 0. THEME MANAGEMENT
@@ -1460,7 +1463,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
           ? null
           : _PurpleFab(onTap: () {
         HapticFeedback.mediumImpact();
-        _showQuickActionDialog(context);
+        unawaited(_showEllieAssistant(assistantName));
       }),
       floatingActionButtonLocation:
       isDesktop ? null : FloatingActionButtonLocation.centerDocked,
@@ -2136,6 +2139,9 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
       if (!mounted) return;
 
       if (roomsSaved && devicesRenamed) {
+        await ref.read(roomImageStoreProvider).rename(oldRoom, newName);
+        ref.invalidate(roomImageProvider(oldRoom));
+        ref.invalidate(roomImageProvider(newName));
         widget.onRoomsUpdated(List<String>.from(_rooms));
         ref.read(dashboardRefreshTickProvider.notifier).state++;
         _showSnack(context, '✅ Room renamed', color: _DT.green);
@@ -2184,6 +2190,8 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
       final success = await _persistRooms(_rooms);
       if (!mounted) return;
       if (success) {
+        await ref.read(roomImageStoreProvider).remove(room);
+        ref.invalidate(roomImageProvider(room));
         _showSnack(context, '🗑️ Room removed: $room', color: _DT.amber);
       } else {
         setState(() => _rooms = previous);
@@ -2352,9 +2360,14 @@ class _PurpleFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
+    return Semantics(
+      button: true,
+      label: 'Open voice assistant',
+      child: Tooltip(
+        message: 'Voice assistant',
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
         width: 56,
         height: 56,
         decoration: BoxDecoration(
@@ -2372,7 +2385,13 @@ class _PurpleFab extends StatelessWidget {
             ),
           ],
         ),
-        child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+            child: const Icon(
+              Icons.graphic_eq_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -3498,7 +3517,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Tap +, then Add Room, to create your first room.',
+                          'Use the Room button above to create your first room.',
                           style: TextStyle(
                             fontSize: 14,
                             color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
@@ -4168,7 +4187,7 @@ Alignment _roomArtAlignment(String roomName) {
   return alignments[hash % alignments.length];
 }
 
-class _RoomGallery extends StatelessWidget {
+class _RoomGallery extends ConsumerWidget {
   final String selectedRoom;
   final ValueChanged<String> onRoomSelected;
   final List<String> rooms;
@@ -4181,10 +4200,121 @@ class _RoomGallery extends StatelessWidget {
     required this.devices,
   });
 
+  Future<void> _manageRooms(BuildContext context) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _RoomManagementDialog(
+        rooms: rooms,
+        onRoomsUpdated: (_) {},
+      ),
+    );
+  }
+
+  Future<void> _addDevice(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: false,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const _QuickActionDialog(),
+    );
+  }
+
+  Future<void> _changeRoomPhoto(
+    BuildContext context,
+    WidgetRef ref,
+    String room,
+  ) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _GCard(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Change $room photo',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.photo_library_rounded),
+                title: const Text('Choose from photos'),
+                onTap: () => Navigator.pop(context, 'gallery'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt_rounded),
+                title: const Text('Take a photo'),
+                onTap: () => Navigator.pop(context, 'camera'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.restore_rounded),
+                title: const Text('Use default photo'),
+                onTap: () => Navigator.pop(context, 'remove'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (action == null) return;
+
+    final store = ref.read(roomImageStoreProvider);
+    if (action == 'remove') {
+      await store.remove(room);
+      ref.invalidate(roomImageProvider(room));
+      return;
+    }
+
+    final source = action == 'camera' ? ImageSource.camera : ImageSource.gallery;
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 1600,
+        maxHeight: 1200,
+        imageQuality: 84,
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      if (bytes.lengthInBytes > 2500000) {
+        if (context.mounted) {
+          _showSnack(
+            context,
+            'Choose a photo smaller than 2.5 MB',
+            color: _DT.amber,
+          );
+        }
+        return;
+      }
+      await store.save(room, bytes);
+      ref.invalidate(roomImageProvider(room));
+      if (context.mounted) {
+        _showSnack(context, 'Room photo updated', color: _DT.green);
+      }
+    } catch (_) {
+      if (context.mounted) {
+        _showSnack(context, 'Could not open that photo', color: _DT.red);
+      }
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final width = MediaQuery.sizeOf(context).width;
-    final cardWidth = width >= 1200 ? 218.0 : width >= 600 ? 196.0 : 168.0;
+    final cardWidth = width >= 1200 ? 224.0 : width >= 600 ? 210.0 : 204.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4207,30 +4337,24 @@ class _RoomGallery extends StatelessWidget {
                 ],
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-              decoration: BoxDecoration(
-                color: _DT.purple.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(99),
-                border: Border.all(
-                  color: _DT.purple.withValues(alpha: 0.24),
-                ),
-              ),
-              child: Text(
-                '${rooms.length} ${rooms.length == 1 ? 'room' : 'rooms'}',
-                style: const TextStyle(
-                  color: _DT.purple,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+            const SizedBox(width: 8),
+            IconButton.filledTonal(
+              tooltip: 'Add or manage rooms',
+              onPressed: () => unawaited(_manageRooms(context)),
+              icon: const Icon(Icons.add_home_rounded),
+            ),
+            const SizedBox(width: 6),
+            IconButton.filled(
+              tooltip: 'Add device',
+              onPressed: () => unawaited(_addDevice(context)),
+              icon: const Icon(Icons.add_rounded),
             ),
           ],
         ),
         if (rooms.isNotEmpty) ...[
           const SizedBox(height: 14),
           SizedBox(
-            height: 224,
+            height: 236,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               clipBehavior: Clip.none,
@@ -4247,6 +4371,8 @@ class _RoomGallery extends StatelessWidget {
                     .where((device) =>
                         device is Map && (device['state'] as bool? ?? false))
                     .length;
+                final customPhoto =
+                    ref.watch(roomImageProvider(room)).asData?.value;
                 return SizedBox(
                   width: cardWidth,
                   child: _RoomCard(
@@ -4254,6 +4380,9 @@ class _RoomGallery extends StatelessWidget {
                     deviceCount: roomDevices.length,
                     activeCount: activeCount,
                     selected: room == selectedRoom,
+                    imageBytes: customPhoto,
+                    onChangeImage: () =>
+                        unawaited(_changeRoomPhoto(context, ref, room)),
                     onTap: () {
                       HapticFeedback.selectionClick();
                       onRoomSelected(room);
@@ -4275,6 +4404,8 @@ class _RoomCard extends StatelessWidget {
   final int activeCount;
   final bool selected;
   final VoidCallback onTap;
+  final VoidCallback onChangeImage;
+  final Uint8List? imageBytes;
 
   const _RoomCard({
     required this.room,
@@ -4282,6 +4413,8 @@ class _RoomCard extends StatelessWidget {
     required this.activeCount,
     required this.selected,
     required this.onTap,
+    required this.onChangeImage,
+    required this.imageBytes,
   });
 
   @override
@@ -4319,12 +4452,20 @@ class _RoomCard extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.asset(
-                  _roomArtAsset,
-                  fit: BoxFit.cover,
-                  alignment: _roomArtAlignment(room),
-                  filterQuality: FilterQuality.medium,
-                ),
+                imageBytes == null
+                    ? Image.asset(
+                        _roomArtAsset,
+                        fit: BoxFit.cover,
+                        alignment: _roomArtAlignment(room),
+                        filterQuality: FilterQuality.high,
+                      )
+                    : Image.memory(
+                        imageBytes!,
+                        fit: BoxFit.cover,
+                        alignment: Alignment.center,
+                        filterQuality: FilterQuality.high,
+                        gaplessPlayback: true,
+                      ),
                 DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -4359,6 +4500,19 @@ class _RoomCard extends StatelessWidget {
                       color: Colors.white,
                       size: 23,
                     ),
+                  ),
+                ),
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: IconButton.filledTonal(
+                    tooltip: 'Change room photo',
+                    onPressed: onChangeImage,
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black.withValues(alpha: 0.48),
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.photo_camera_back_rounded, size: 19),
                   ),
                 ),
                 Positioned(
@@ -4426,7 +4580,7 @@ class _RoomCard extends StatelessWidget {
   }
 }
 
-class _FocusedRoomPanel extends StatelessWidget {
+class _FocusedRoomPanel extends ConsumerWidget {
   final String room;
   final List<dynamic> devices;
   final Future<void> Function(String id, bool state) onToggle;
@@ -4447,7 +4601,7 @@ class _FocusedRoomPanel extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final surface = isDark
@@ -4478,14 +4632,14 @@ class _FocusedRoomPanel extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(flex: 6, child: _buildHero(context, 390)),
+                    Expanded(flex: 6, child: _buildHero(context, 390, ref)),
                     Expanded(flex: 5, child: _buildDevices(context)),
                   ],
                 ),
               )
             : Column(
                 children: [
-                  _buildHero(context, 310),
+                  _buildHero(context, 310, ref),
                   _buildDevices(context),
                 ],
               ),
@@ -4495,17 +4649,20 @@ class _FocusedRoomPanel extends StatelessWidget {
     return RepaintBoundary(child: panel);
   }
 
-  Widget _buildHero(BuildContext context, double minimumHeight) {
+  Widget _buildHero(BuildContext context, double minimumHeight, WidgetRef ref) {
     final accent = _roomAccentFor(room);
     final activeCount = devices
         .where((device) => device is Map && (device['state'] as bool? ?? false))
         .length;
 
+    final customPhoto = ref.watch(roomImageProvider(room)).asData?.value;
     return Container(
       height: minimumHeight,
       decoration: BoxDecoration(
         image: DecorationImage(
-          image: const AssetImage(_roomArtAsset),
+          image: customPhoto == null
+              ? const AssetImage(_roomArtAsset)
+              : MemoryImage(customPhoto),
           fit: BoxFit.cover,
           alignment: _roomArtAlignment(room),
         ),
