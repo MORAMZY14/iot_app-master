@@ -1,6 +1,35 @@
-# SmartHome 2.2 — customizable rooms and local voice playback
+# SmartHome 2.4 — room-image and local voice reliability update
 
-## Prototype 2.2 update
+## Prototype 2.4 interface and voice fixes
+
+- The duplicate voice-assistant action was removed from the phone header. The
+  centered bottom button is now the single mobile entry point.
+- The selected-room hero stretches across the complete panel and keeps
+  `BoxFit.cover`, including customer-selected gallery or camera photos.
+- Clear power phrases now support any customer device name, such as
+  **“Turn on Laptop”**, instead of only a fixed list of device types.
+- If local Wi-Fi is unavailable (for example while the phone is on 4G), an
+  assistant command automatically attempts the existing ESP32 BLE connection.
+- The assistant sheet shows the real BLE state and includes a manual local
+  connect/retry button instead of displaying a generic local-mode disclaimer.
+- iOS speech output restores its playback audio session after microphone use
+  and has a bounded completion timeout, preventing a permanent “speaking” state.
+
+## Prototype 2.3 integration update
+
+- The complete assistant intent engine is inside the supplied ESP32 firmware,
+  not in a separate demonstration sketch.
+- Flutter and the assistant now use the same dynamically discovered controller
+  IP. A compile-time `ESP32_LOCAL_IP` remains an optional override.
+- BLE status returns the controller IP, firmware version, assistant name,
+  assistant readiness, speaker capability, temperature, humidity, and flame
+  state.
+- Assistant-name changes, commands, device state, sensors, and speech output
+  share the same HTTP/BLE contract.
+- Firmware reports version `2.4.0-offline-assistant`, allowing the app and
+  serial/BLE diagnostics to identify the integrated build.
+
+## Prototype 2.2 room and voice update
 
 - The mobile center button opens the voice assistant.
 - Add/manage room and add-device controls sit beside **Your Rooms**.

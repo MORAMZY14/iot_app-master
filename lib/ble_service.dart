@@ -35,6 +35,11 @@ class BleService {
   double temperature = 0.0;
   double humidity = 0.0;
   bool flameDetected = false;
+  String? controllerIp;
+  String? controllerUniqueCode;
+  String? controllerAssistantName;
+  String? controllerFirmwareVersion;
+  bool assistantReady = false;
   Map<String, bool> lights = <String, bool>{};
   List<Map<String, dynamic>> devices = <Map<String, dynamic>>[];
 
@@ -235,7 +240,7 @@ class BleService {
   Future<void> readSensorData() async {
     if (!isConnected) return;
     try {
-      final data = await sendCommand({'cmd': 'status'}, timeout: AppConfig.shortTimeout);
+      final data = await readControllerStatus();
       final temp = data['temp'] ?? data['temperature'];
       final hum = data['hum'] ?? data['humidity'];
       final flame = data['flame'];
@@ -246,6 +251,25 @@ class BleService {
     } catch (e) {
       logDebug('BLE status read skipped: $e');
     }
+  }
+
+  Future<Map<String, dynamic>> readControllerStatus() async {
+    final data = await sendCommand(
+      {'cmd': 'status'},
+      timeout: AppConfig.shortTimeout,
+    );
+    final ip = (data['ip'] ?? '').toString().trim();
+    if (ip.isNotEmpty && ip != '0.0.0.0' && ip != 'BLE') {
+      controllerIp = ip;
+    }
+    final code = (data['uniqueCode'] ?? '').toString().trim();
+    if (code.isNotEmpty) controllerUniqueCode = code;
+    final name = (data['assistantName'] ?? '').toString().trim();
+    if (name.isNotEmpty) controllerAssistantName = name;
+    final version = (data['firmwareVersion'] ?? '').toString().trim();
+    if (version.isNotEmpty) controllerFirmwareVersion = version;
+    assistantReady = data['assistantReady'] == true;
+    return data;
   }
 
   Future<void> refreshDevices() async {

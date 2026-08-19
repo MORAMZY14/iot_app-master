@@ -32,6 +32,8 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
   final List<_EllieMessage> _messages = <_EllieMessage>[];
 
   StreamSubscription<EllieVoiceEvent>? _subscription;
+  StreamSubscription<BleStatus>? _bleSubscription;
+  late BleStatus _bleStatus;
   EllieLanguageMode _languageMode = EllieLanguageMode.automatic;
   EllieVoiceEvent _event = const EllieVoiceEvent(
     phase: EllieVoicePhase.idle,
@@ -41,6 +43,11 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
   @override
   void initState() {
     super.initState();
+    _bleStatus = widget.bleService.currentStatus;
+    _bleSubscription = widget.bleService.statusStream.listen((status) {
+      if (!mounted) return;
+      setState(() => _bleStatus = status);
+    });
     _messages.addAll(<_EllieMessage>[
       _EllieMessage(
         text:
@@ -159,6 +166,12 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
     await _controller.handleTranscript(text, bypassWakeWord: true);
   }
 
+  Future<void> _connectBluetooth() async {
+    await widget.bleService.connect();
+    if (!mounted) return;
+    setState(() => _bleStatus = widget.bleService.currentStatus);
+  }
+
   bool get _isBusy =>
       _event.phase == EllieVoicePhase.thinking ||
       _event.phase == EllieVoicePhase.speaking;
@@ -166,6 +179,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
   @override
   void dispose() {
     unawaited(_subscription?.cancel());
+    unawaited(_bleSubscription?.cancel());
     unawaited(_controller.dispose());
     _textController.dispose();
     _scrollController.dispose();
@@ -319,6 +333,51 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
 
   Widget _buildLocalNotice(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final connected = _bleStatus == BleStatus.connected ||
+        _bleStatus == BleStatus.dataUpdated;
+    final connecting = _bleStatus == BleStatus.scanning ||
+        _bleStatus == BleStatus.connecting;
+
+    final IconData icon;
+    final Color accent;
+    final String message;
+    if (connected) {
+      icon = Icons.bluetooth_connected_rounded;
+      accent = Colors.greenAccent.shade400;
+      message =
+          'ESP32 connected locally by Bluetooth. Device commands are ready.\n'
+          'الـ ESP32 متصل محلياً بالبلوتوث، وأوامر الأجهزة جاهزة.';
+    } else if (connecting) {
+      icon = Icons.bluetooth_searching_rounded;
+      accent = colors.primary;
+      message =
+          'Connecting to the nearby ESP32…\nجارٍ الاتصال بالـ ESP32 القريب…';
+    } else if (_bleStatus == BleStatus.adapterOff) {
+      icon = Icons.bluetooth_disabled_rounded;
+      accent = colors.error;
+      message =
+          'Bluetooth is off. Turn it on for local commands while the phone is on 4G.\n'
+          'البلوتوث مغلق. شغّليه لتنفيذ الأوامر المحلية عند استخدام شبكة الهاتف.';
+    } else if (_bleStatus == BleStatus.notFound) {
+      icon = Icons.portable_wifi_off_rounded;
+      accent = colors.error;
+      message =
+          'ESP32 not found. Keep it powered, nearby, and advertising, then retry.\n'
+          'لم يتم العثور على الـ ESP32. تأكدي من تشغيله وقربه ثم أعيدي المحاولة.';
+    } else if (_bleStatus == BleStatus.error) {
+      icon = Icons.error_outline_rounded;
+      accent = colors.error;
+      message =
+          'Bluetooth could not connect. Check Nearby Devices permission and retry.\n'
+          'تعذر اتصال البلوتوث. تحققي من إذن الأجهزة القريبة ثم أعيدي المحاولة.';
+    } else {
+      icon = Icons.wifi_tethering_rounded;
+      accent = colors.primary;
+      message =
+          'Commands use local Wi-Fi first. On 4G, Bluetooth connects automatically when you send a device command.\n'
+          'تُستخدم شبكة Wi-Fi المحلية أولاً، وعلى شبكة الهاتف سيُجرّب البلوتوث تلقائياً.';
+    }
+
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -327,11 +386,37 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
         color: colors.secondaryContainer.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Text(
-        'Local-only mode: no OpenAI, cloud assistant, or remote conversation.\n'
-        'الوضع المحلي فقط: بدون أوبن أي آي أو مساعد سحابي أو محادثة عن بُعد.',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 12, color: colors.onSecondaryContainer),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(icon, size: 20, color: accent),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  message,
+                  textAlign: TextAlign.start,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colors.onSecondaryContainer,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (!connected && !connecting) ...<Widget>[
+            const SizedBox(height: 5),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: TextButton.icon(
+                onPressed: () => unawaited(_connectBluetooth()),
+                icon: const Icon(Icons.bluetooth_rounded, size: 17),
+                label: const Text('Connect · اتصال'),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

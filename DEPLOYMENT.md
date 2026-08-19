@@ -42,6 +42,10 @@ The complete supplied sketch is included here:
 esp32_firmware/SmartHomeOffline/SmartHomeOffline.ino
 ```
 
+This is the single combined firmware. It already contains the offline
+assistant parser, HTTP endpoints, BLE commands, name persistence, PCF8574
+control, sensor reads, and optional I2S speech queue.
+
 In Arduino IDE, install the ESP32 board package plus ArduinoJson 6.x,
 NimBLE-Arduino, DHT sensor library, and Adafruit Unified Sensor. Install
 ESP8266Audio and ESP8266SAM only if local English speech through an I2S speaker

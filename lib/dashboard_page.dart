@@ -932,6 +932,21 @@ final userEsp32CodeProvider = FutureProvider<String?>((ref) async {
 });
 
 final esp32IpProvider = FutureProvider<String>((ref) async {
+  if (AppConfig.esp32IpOverride.isNotEmpty) {
+    return AppConfig.esp32IpOverride;
+  }
+
+  final bleService = ref.read(bleServiceProvider);
+  if (bleService.isConnected) {
+    try {
+      await bleService.readControllerStatus();
+      final bleIp = bleService.controllerIp;
+      if (bleIp != null && bleIp.isNotEmpty) return bleIp;
+    } catch (e) {
+      logDebug('ESP32 IP unavailable from BLE status: $e');
+    }
+  }
+
   final code = await ref.watch(userEsp32CodeProvider.future);
   final authService = await ref.watch(authServiceProvider.future);
   final user = authService.currentUser;
@@ -978,6 +993,30 @@ final esp32IpProvider = FutureProvider<String>((ref) async {
 
   return AppConfig.fallbackEsp32Ip;
 });
+
+Future<String> _resolveAssistantEsp32Ip(WidgetRef ref) async {
+  if (AppConfig.esp32IpOverride.isNotEmpty) {
+    return AppConfig.esp32IpOverride;
+  }
+
+  final bleService = ref.read(bleServiceProvider);
+  if (bleService.isConnected) {
+    try {
+      await bleService.readControllerStatus();
+      final bleIp = bleService.controllerIp;
+      if (bleIp != null && bleIp.isNotEmpty) return bleIp;
+    } catch (e) {
+      logDebug('Assistant IP unavailable from BLE status: $e');
+    }
+  }
+
+  try {
+    return await ref.read(esp32IpProvider.future);
+  } catch (e) {
+    logDebug('Assistant IP provider unavailable: $e');
+    return AppConfig.fallbackEsp32Ip;
+  }
+}
 
 final esp32DeviceServiceProvider = FutureProvider<ESP32DeviceService>((ref) async {
   final ip = await ref.watch(esp32IpProvider.future);
@@ -1400,13 +1439,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
   }
 
   Future<void> _showEllieAssistant(String assistantName) async {
+    final esp32Ip = await _resolveAssistantEsp32Ip(ref);
+    if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (context) => EllieAssistantSheet(
-        esp32BaseUri: Uri.parse('http://${AppConfig.assistantEsp32Ip}'),
+        esp32BaseUri: Uri.parse('http://$esp32Ip'),
         assistantName: assistantName,
         bleService: ref.read(bleServiceProvider),
       ),
@@ -1429,8 +1470,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
         onRefresh: _manualRefresh,
         bleStatus: bleService.currentStatus,
         onConnectBLE: () => unawaited(bleService.connect().catchError((_) {})),
-        assistantName: assistantName,
-        onEllie: () => unawaited(_showEllieAssistant(assistantName)),
       ),
       body: _WallpaperBackground(
         // Keep every tab alive. AnimatedSwitcher was destroying Home when moving
@@ -2404,15 +2443,11 @@ class _GlassAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final Future<void> Function() onRefresh;
   final BleStatus bleStatus;
   final VoidCallback onConnectBLE;
-  final VoidCallback onEllie;
-  final String assistantName;
 
   const _GlassAppBar({
     required this.onRefresh,
     required this.bleStatus,
     required this.onConnectBLE,
-    required this.onEllie,
-    required this.assistantName,
   });
 
   void _toggleTheme(WidgetRef ref) {
@@ -2482,30 +2517,6 @@ class _GlassAppBar extends ConsumerWidget implements PreferredSizeWidget {
               ],
             ),
             actions: [
-              _ABBtn(
-                onTap: onEllie,
-                child: Semantics(
-                  button: true,
-                  label:
-                      'Talk to $assistantName · تحدث إلى $assistantName',
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: [_DT.purple, _DT.blue],
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.graphic_eq_rounded,
-                      size: 19,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
               _ABBtn(
                 onTap: () => _toggleTheme(ref),
                 child: Container(
@@ -4638,6 +4649,7 @@ class _FocusedRoomPanel extends ConsumerWidget {
                 ),
               )
             : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _buildHero(context, 310, ref),
                   _buildDevices(context),
@@ -4657,6 +4669,7 @@ class _FocusedRoomPanel extends ConsumerWidget {
 
     final customPhoto = ref.watch(roomImageProvider(room)).asData?.value;
     return Container(
+      width: double.infinity,
       height: minimumHeight,
       decoration: BoxDecoration(
         image: DecorationImage(
@@ -5869,11 +5882,12 @@ class _SettingsScreen extends ConsumerWidget {
     }
 
     Future<bool> syncAssistantNameToController(String name) async {
+      final esp32Ip = await _resolveAssistantEsp32Ip(ref);
       try {
         final response = await http
             .post(
               Uri.parse(
-                'http://${AppConfig.assistantEsp32Ip}/api/assistant/name',
+                'http://$esp32Ip/api/assistant/name',
               ),
               headers: const {'Content-Type': 'application/json'},
               body: jsonEncode({'assistantName': name}),

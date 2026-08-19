@@ -151,20 +151,7 @@ class EllieVoiceController {
         _ttsLanguages = rawTtsLanguages.map((value) => '$value').toList();
       }
       await _tts.awaitSpeakCompletion(true);
-      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-        await _tts.setSharedInstance(true);
-        await _tts.setIosAudioCategory(
-          IosTextToSpeechAudioCategory.playback,
-          <IosTextToSpeechAudioCategoryOptions>[
-            IosTextToSpeechAudioCategoryOptions.allowBluetooth,
-            IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
-            IosTextToSpeechAudioCategoryOptions.duckOthers,
-            IosTextToSpeechAudioCategoryOptions
-                .interruptSpokenAudioAndMixWithOthers,
-          ],
-          IosTextToSpeechAudioMode.voicePrompt,
-        );
-      }
+      await _configurePhoneAudioSession();
       await _tts.setSpeechRate(0.46);
       await _tts.setPitch(1.0);
       await _tts.setVolume(1.0);
@@ -295,9 +282,11 @@ class EllieVoiceController {
     ));
 
     EllieLocalReply? local;
+    Object? localConnectionError;
     try {
       local = await _sendLocalIntent(text, language);
-    } catch (_) {
+    } catch (error) {
+      localConnectionError = error;
       local = null;
     }
 
@@ -310,8 +299,26 @@ class EllieVoiceController {
       return;
     }
 
-    if (_looksLikeHardwareCommand(text) &&
-        (local == null || local.needsFallback)) {
+    if (_looksLikeHardwareCommand(text) && local == null) {
+      await _deliverReply(
+        EllieLanguageTools.pick(
+          language,
+          english:
+              "I can't reach the ESP32. On 4G, turn on Bluetooth and allow Nearby Devices, or join the ESP32's local Wi-Fi, then try again.",
+          arabic:
+              'لا أستطيع الوصول إلى الـ ESP32. عند استخدام شبكة الهاتف، شغّلي البلوتوث واسمحي بالأجهزة القريبة، أو اتصلي بشبكة الـ ESP المحلية ثم حاولي مرة أخرى.',
+        ),
+        language: language,
+        esp32AlreadyQueued: false,
+        tryEsp32: false,
+      );
+      if (kDebugMode && localConnectionError != null) {
+        debugPrint('Local ESP32 assistant connection failed: $localConnectionError');
+      }
+      return;
+    }
+
+    if (_looksLikeHardwareCommand(text) && local?.needsFallback == true) {
       await _deliverReply(
         EllieLanguageTools.pick(
           language,
@@ -404,7 +411,7 @@ class EllieVoiceController {
       return EllieLocalReply.fromJson(_decodeObject(response.body));
     } catch (_) {
       final ble = bleService;
-      if (ble == null || !ble.isConnected) rethrow;
+      if (ble == null || !await _ensureBleConnected(ble)) rethrow;
       final response = await ble.sendEllieText(
         text,
         speak: speakLocally,
@@ -412,6 +419,30 @@ class EllieVoiceController {
       );
       return EllieLocalReply.fromJson(response);
     }
+  }
+
+  Future<bool> _ensureBleConnected(BleService ble) async {
+    if (ble.isConnected) return true;
+
+    try {
+      await ble.connect().timeout(const Duration(seconds: 12));
+    } catch (_) {
+      return false;
+    }
+    if (ble.isConnected) return true;
+
+    // connect() returns immediately when another part of the dashboard is
+    // already scanning. Give that in-flight connection a short time to finish.
+    final deadline = DateTime.now().add(const Duration(seconds: 3));
+    while (DateTime.now().isBefore(deadline)) {
+      if (ble.isConnected) return true;
+      if (ble.currentStatus != BleStatus.scanning &&
+          ble.currentStatus != BleStatus.connecting) {
+        break;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
+    return ble.isConnected;
   }
 
   Future<void> _syncAssistantNameToEsp32() async {
@@ -451,7 +482,12 @@ class EllieVoiceController {
       language: language,
       reply: reply,
     ));
-    await _speech.stop();
+    try {
+      await _speech.stop().timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // A stale recognition session must never leave the sheet stuck in the
+      // speaking phase. TTS below reclaims the iOS playback audio session.
+    }
 
     final tasks = <Future<void>>[];
     if (_phoneSpeechEnabled) {
@@ -483,14 +519,45 @@ class EllieVoiceController {
 
   Future<void> _speakOnPhone(String text, EllieLanguage language) async {
     await _tts.stop();
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      // speech_to_text temporarily owns the iOS recording session. Allow it to
+      // release that session, then explicitly restore audible playback so the
+      // hardware silent switch does not mute assistant replies.
+      await Future<void>.delayed(const Duration(milliseconds: 180));
+    }
+    await _configurePhoneAudioSession();
     final locale = _bestTtsLocale(language);
     await _tts.setLanguage(locale);
     await _tts.setVolume(1.0);
     await _tts.setSpeechRate(language == EllieLanguage.arabic ? 0.42 : 0.46);
-    final result = await _tts.speak(text);
-    if (result != 1) {
-      throw StateError('The phone text-to-speech engine did not start.');
+    final timeoutSeconds = (8 + (text.length ~/ 8)).clamp(10, 36).toInt();
+    try {
+      final result = await _tts
+          .speak(text)
+          .timeout(Duration(seconds: timeoutSeconds));
+      if (result != 1) {
+        throw StateError('The phone text-to-speech engine did not start.');
+      }
+    } on TimeoutException {
+      await _tts.stop();
+      throw StateError('Phone voice output timed out.');
     }
+  }
+
+  Future<void> _configurePhoneAudioSession() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+    await _tts.setSharedInstance(true);
+    await _tts.setIosAudioCategory(
+      IosTextToSpeechAudioCategory.playback,
+      <IosTextToSpeechAudioCategoryOptions>[
+        IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+        IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+        IosTextToSpeechAudioCategoryOptions.duckOthers,
+        IosTextToSpeechAudioCategoryOptions
+            .interruptSpokenAudioAndMixWithOthers,
+      ],
+      IosTextToSpeechAudioMode.voicePrompt,
+    );
   }
 
   Future<void> testPhoneVoice() async {
@@ -539,6 +606,14 @@ class EllieVoiceController {
 
   bool _looksLikeHardwareCommand(String text) {
     final normalized = text.toLowerCase();
+    // A customer can give any relay a custom name (for example "Laptop").
+    // Treat a clear power phrase as hardware intent without requiring the name
+    // to be one of a small hard-coded list of device types.
+    final englishPowerPhrase = RegExp(
+      r'\b(turn|switch|power)\s+(on|off)\b|\b(turn|switch|power)\b.+\b(on|off)\b|\b(activate|deactivate)\b',
+    ).hasMatch(normalized);
+    if (englishPowerPhrase) return true;
+
     final englishAction =
         RegExp(r'\b(turn|switch|power|activate|deactivate)\b')
             .hasMatch(normalized);
