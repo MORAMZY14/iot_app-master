@@ -31,6 +31,7 @@ class BleService {
   Timer? _sensorPollTimer;
   bool _disposed = false;
   bool _commandBusy = false;
+  int _lastResponseSequence = 0;
 
   double temperature = 0.0;
   double humidity = 0.0;
@@ -169,9 +170,13 @@ class BleService {
         throw StateError('BLE backup command characteristic not found');
       }
 
+      _lastResponseSequence = 0;
       _updateStatus(BleStatus.connected);
       await readSensorData();
-      unawaited(refreshDevices());
+      // Finish the initial device read before connect() returns. Starting this
+      // unawaited raced the first assistant command and made it look as though
+      // the ESP32 had frozen while Flutter rejected the overlapping command.
+      await refreshDevices();
       _startSensorPolling();
     } catch (e) {
       if (_isUserCancelledBluetoothError(e)) {
@@ -194,13 +199,42 @@ class BleService {
       throw StateError('BLE is not connected');
     }
     if (_commandBusy) {
-      throw StateError('Another BLE command is already running');
+      final waitUntil = DateTime.now().add(const Duration(seconds: 3));
+      while (_commandBusy && DateTime.now().isBefore(waitUntil)) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+      }
+      if (_commandBusy) {
+        throw StateError('Another BLE command is still running');
+      }
     }
 
     _commandBusy = true;
     final expectedCmd = (command['cmd'] ?? '').toString();
 
     try {
+      // Record the current firmware response sequence before writing. Reads can
+      // otherwise return the previous characteristic value and falsely finish
+      // a new command before the ESP32 has processed it.
+      var baselineSequence = _lastResponseSequence;
+      try {
+        final before = await _commandChar!.read();
+        final beforeText = utf8.decode(before, allowMalformed: true).trim();
+        if (beforeText.isNotEmpty) {
+          final decodedBefore = jsonDecode(beforeText);
+          if (decodedBefore is Map &&
+              decodedBefore['responseSequence'] is num) {
+            final sequence =
+                (decodedBefore['responseSequence'] as num).toInt();
+            if (sequence > baselineSequence) baselineSequence = sequence;
+            if (sequence > _lastResponseSequence) {
+              _lastResponseSequence = sequence;
+            }
+          }
+        }
+      } catch (_) {
+        // Firmware before 2.5 has no response sequence; retain compatibility.
+      }
+
       await _commandChar!.write(
         utf8.encode(jsonEncode(command)),
         withoutResponse: false,
@@ -216,6 +250,12 @@ class BleService {
         final decoded = jsonDecode(text);
         if (decoded is! Map) continue;
         last = decoded.cast<String, dynamic>();
+        final rawSequence = last['responseSequence'];
+        if (rawSequence is num) {
+          final sequence = rawSequence.toInt();
+          if (sequence <= baselineSequence) continue;
+          _lastResponseSequence = sequence;
+        }
         final responseCmd = (last['cmd'] ?? '').toString();
         if (expectedCmd.isEmpty || responseCmd.isEmpty || responseCmd == expectedCmd) {
           if (last['ok'] == false) {
@@ -233,7 +273,7 @@ class BleService {
   void _startSensorPolling() {
     _sensorPollTimer?.cancel();
     _sensorPollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
-      readSensorData();
+      if (!_commandBusy) unawaited(readSensorData());
     });
   }
 
@@ -449,6 +489,7 @@ class BleService {
     _sensorPollTimer = null;
     _connectionSub?.cancel();
     _connectionSub = null;
+    _lastResponseSequence = 0;
     if (clearDevice) {
       final device = _device;
       _device = null;

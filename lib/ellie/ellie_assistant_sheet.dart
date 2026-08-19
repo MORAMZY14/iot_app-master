@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../ble_service.dart';
 import 'ellie_language.dart';
 import 'ellie_voice_controller.dart';
+import 'local_music_service.dart';
 
 class EllieAssistantSheet extends StatefulWidget {
   const EllieAssistantSheet({
@@ -27,6 +28,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
   static const String _languagePreferenceKey = 'ellie_language_mode';
 
   late final EllieVoiceController _controller;
+  late final LocalMusicService _musicService;
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<_EllieMessage> _messages = <_EllieMessage>[];
@@ -43,6 +45,8 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
   @override
   void initState() {
     super.initState();
+    _musicService = LocalMusicService.instance;
+    _musicService.addListener(_handleMusicChanged);
     _bleStatus = widget.bleService.currentStatus;
     _bleSubscription = widget.bleService.statusStream.listen((status) {
       if (!mounted) return;
@@ -51,12 +55,12 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
     _messages.addAll(<_EllieMessage>[
       _EllieMessage(
         text:
-            'Hi, I’m ${widget.assistantName}. Say “${widget.assistantName}” and your request, or type below.',
+            'Hi, I’m ${widget.assistantName}. Say my name, then try “turn off TV and Lamp” or “play a song.” Add local songs with the music button.',
         language: EllieLanguage.english,
       ),
       _EllieMessage(
         text:
-            'مرحباً، أنا ${widget.assistantName}. قولي «${widget.assistantName}» ثم طلبك، أو اكتبي في الأسفل.',
+            'مرحباً، أنا ${widget.assistantName}. قولي اسمي ثم جرّبي «اطفي التلفزيون والمروحة» أو «شغلي أغنية». أضيفي الأغاني من زر الموسيقى.',
         language: EllieLanguage.arabic,
       ),
     ]);
@@ -64,7 +68,10 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
       esp32BaseUri: widget.esp32BaseUri,
       assistantName: widget.assistantName,
       bleService: widget.bleService,
-      outputMode: EllieOutputMode.both,
+      musicService: _musicService,
+      // The phone is the dependable bilingual speaker. ESP32 speech remains
+      // available in firmware, but is optional hardware and English-only.
+      outputMode: EllieOutputMode.phone,
       requireWakeWord: true,
     );
     _subscription = _controller.events.listen(_handleEvent);
@@ -72,6 +79,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
   }
 
   Future<void> _initialize() async {
+    await _musicService.initialize();
     final preferences = await SharedPreferences.getInstance();
     final savedMode = EllieLanguageTools.modeFromStorage(
       preferences.getString(_languagePreferenceKey),
@@ -80,6 +88,10 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
     setState(() => _languageMode = savedMode);
     _controller.setLanguageMode(savedMode);
     await _controller.initialize();
+  }
+
+  void _handleMusicChanged() {
+    if (mounted) setState(() {});
   }
 
   void _handleEvent(EllieVoiceEvent event) {
@@ -172,6 +184,18 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
     setState(() => _bleStatus = widget.bleService.currentStatus);
   }
 
+  Future<void> _showMusicLibrary() async {
+    await _musicService.initialize();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (context) => _LocalMusicLibrarySheet(service: _musicService),
+    );
+  }
+
   bool get _isBusy =>
       _event.phase == EllieVoicePhase.thinking ||
       _event.phase == EllieVoicePhase.speaking;
@@ -181,6 +205,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
     unawaited(_subscription?.cancel());
     unawaited(_bleSubscription?.cancel());
     unawaited(_controller.dispose());
+    _musicService.removeListener(_handleMusicChanged);
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -237,7 +262,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
               child: Text(
-                'On-device speech + local ESP32 commands · نطق على الجهاز وأوامر محلية للـ ESP',
+                'On-device speech + local music + ESP32 commands · نطق وموسيقى محلية وأوامر ESP',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: colors.onSurfaceVariant.withValues(alpha: 0.72),
@@ -285,6 +310,19 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
                   style: TextStyle(fontSize: 12),
                 ),
               ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Local music library · مكتبة الموسيقى المحلية',
+            onPressed: _isBusy ? null : () => unawaited(_showMusicLibrary()),
+            icon: Badge.count(
+              count: _musicService.tracks.length,
+              isLabelVisible: _musicService.tracks.isNotEmpty,
+              child: Icon(
+                _musicService.isPlaying
+                    ? Icons.music_note_rounded
+                    : Icons.library_music_rounded,
+              ),
             ),
           ),
           IconButton(
@@ -527,6 +565,208 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _LocalMusicLibrarySheet extends StatefulWidget {
+  const _LocalMusicLibrarySheet({required this.service});
+
+  final LocalMusicService service;
+
+  @override
+  State<_LocalMusicLibrarySheet> createState() =>
+      _LocalMusicLibrarySheetState();
+}
+
+class _LocalMusicLibrarySheetState extends State<_LocalMusicLibrarySheet> {
+  bool _importing = false;
+
+  Future<void> _importTracks() async {
+    if (_importing) return;
+    setState(() => _importing = true);
+    try {
+      final count = await widget.service.importTracks();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          count == 0
+              ? 'No audio files were added.'
+              : 'Added $count local ${count == 1 ? 'song' : 'songs'}.',
+        ),
+      ));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Could not import that audio file: $error'),
+      ));
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
+  Future<void> _toggleTrack(LocalMusicTrack track) async {
+    try {
+      if (widget.service.currentTrack?.path == track.path &&
+          widget.service.isPlaying) {
+        await widget.service.pause();
+      } else {
+        await widget.service.playTrack(track);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Could not play ${track.title}: $error'),
+      ));
+    }
+  }
+
+  Future<void> _removeTrack(LocalMusicTrack track) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove local song?'),
+        content: Text(
+          'Remove “${track.title}” from this phone? The original file outside the app is not changed.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await widget.service.removeTrack(track);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return AnimatedBuilder(
+      animation: widget.service,
+      builder: (context, _) {
+        final tracks = widget.service.tracks;
+        final current = widget.service.currentTrack;
+        return SizedBox(
+          height: MediaQuery.sizeOf(context).height * 0.67,
+          child: Column(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 6, 12, 10),
+                child: Row(
+                  children: <Widget>[
+                    Icon(Icons.library_music_rounded, color: colors.primary),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Local music library',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          Text(
+                            'Files stay on this phone · الملفات تبقى على الهاتف',
+                            style: TextStyle(fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                    FilledButton.icon(
+                      onPressed: _importing ? null : _importTracks,
+                      icon: _importing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.add_rounded),
+                      label: const Text('Add songs'),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: colors.secondaryContainer.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Text(
+                    'Try: “Play Blinding Lights”, “pause music”, “next song”\n'
+                    'جرّبي: «شغلي أغنية Blinding Lights» أو «وقفي الموسيقى»',
+                    style: TextStyle(fontSize: 12, height: 1.4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: tracks.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(28),
+                          child: Text(
+                            'No local songs yet. Tap “Add songs” and choose audio files from Files.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+                        itemCount: tracks.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final track = tracks[index];
+                          final selected = current?.path == track.path;
+                          final playing = selected && widget.service.isPlaying;
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: selected
+                                  ? colors.primary
+                                  : colors.surfaceContainerHighest,
+                              foregroundColor:
+                                  selected ? colors.onPrimary : colors.onSurface,
+                              child: Icon(
+                                playing
+                                    ? Icons.pause_rounded
+                                    : Icons.music_note_rounded,
+                              ),
+                            ),
+                            title: Text(
+                              track.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              playing
+                                  ? 'Playing locally · تعمل محلياً'
+                                  : 'Tap to play · اضغطي للتشغيل',
+                            ),
+                            onTap: () => unawaited(_toggleTrack(track)),
+                            trailing: IconButton(
+                              tooltip: 'Remove local song',
+                              onPressed: () => unawaited(_removeTrack(track)),
+                              icon: const Icon(Icons.delete_outline_rounded),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

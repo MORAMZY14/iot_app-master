@@ -19,6 +19,14 @@ flutter test
 
 Install offline English and Arabic speech-recognition/TTS voices in the phone's
 system settings. The app deliberately does not fall back to network recognition.
+Because 2.6 adds native local-audio packages, run `flutter clean` once before
+the first 2.6 build, then run `flutter pub get` again.
+
+In the assistant, tap the music-library icon, choose **Add songs**, and select
+local audio files from Files. The app copies them into its private sandbox so
+commands such as `play Blinding Lights`, `pause music`, and `next song` keep
+working without a server. Spotify/Apple Music catalogue search is intentionally
+not used because this build is fully local.
 
 ## 2. Run locally
 
@@ -49,8 +57,13 @@ control, sensor reads, and optional I2S speech queue.
 In Arduino IDE, install the ESP32 board package plus ArduinoJson 6.x,
 NimBLE-Arduino, DHT sensor library, and Adafruit Unified Sensor. Install
 ESP8266Audio and ESP8266SAM only if local English speech through an I2S speaker
-is required. Then select the exact ESP32 board and port, click **Verify**, click
+ is required. Then select the exact ESP32 board and port, click **Verify**, click
 **Upload**, and open Serial Monitor at 115200 baud.
+
+For this build, confirm that BLE status or Serial diagnostics report
+`2.6.0-music-multidevice`. The matching Flutter build is `2.6.0+41`; update
+both sides together. This retains BLE response sequencing and adds multiple
+named-device targeting.
 
 The sketch keeps the supplied GPIO, PCF8574, BLE, HTTP, sensor, device, and
 optional Firebase synchronization code. Assistant processing is fully local:
@@ -66,6 +79,28 @@ There is no remote-audio endpoint, speech ticket, AI API key, or unknown-command
 assistant network fallback. See
 `esp32_firmware/SmartHomeOffline/README.md` for the retained pin map, first Wi-Fi
 setup, local endpoint examples, and the no-microphone hardware limitation.
+
+### Command responsiveness check
+
+After flashing, send the same device command five times over local Wi-Fi and
+five times with phone Wi-Fi disabled so BLE is used. The relay and reply should
+remain responsive even if Internet access is unavailable. Serial Monitor should
+show `BLE command:` entries without watchdog resets. If it prints an I²C write
+error, check PCF8574 power, common ground, SDA/SCL pull-ups, address jumpers, and
+the configured bus pins; the 30 ms bus timeout now prevents that wiring fault
+from indefinitely blocking the controller.
+
+Then test `turn off TV and Desk Lamp` using two actual configured device names.
+Only those two relays should change, and both names should appear in the reply.
+The command `turn off two devices` should ask you to name them.
+
+### iPhone reply check
+
+Open the assistant and tap the speaker icon. You should hear the customer
+assistant name through the current iPhone media route. If not, raise **media**
+volume (not ringtone volume), disconnect an unwanted Bluetooth audio route, and
+install the selected English/Arabic system voice. Version 2.6 uses the phone as
+the default bilingual reply speaker; the ESP32 I²S speaker is optional.
 
 ## 4. Android test APK — no production key
 

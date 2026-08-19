@@ -1,4 +1,42 @@
-# SmartHome 2.4 — room-image and local voice reliability update
+# SmartHome 2.6 — local music, multi-device commands, and audible replies
+
+## Prototype 2.6 assistant update
+
+- A private on-phone music library now imports MP3, M4A, AAC, WAV, and other
+  audio files selected through the system file picker. Files are copied into
+  the app sandbox and never uploaded.
+- Voice or typed commands support **play music**, **play _song name_**,
+  **pause**, **resume**, **stop**, **next**, **previous**, and **what song is
+  playing** in English and Arabic.
+- The ESP32 can safely match several differently named targets in one command,
+  such as **“turn off TV and Desk Lamp.”** A request for “two devices” without
+  names asks for both names instead of selecting relays arbitrarily.
+- iPhone replies now use the phone speaker by default. Speech-to-text and TTS
+  initialize independently, the recording session is fully released before
+  playback, incompatible playback/Bluetooth audio options were removed, and a
+  native on-device `AVSpeechSynthesizer` fallback is included.
+- The old generic “one voice output unavailable” warning is replaced with a
+  specific phone or optional-ESP32 speaker diagnostic.
+- Firmware reports `2.6.0-music-multidevice`; Flutter is `2.6.0+41`.
+
+Local music means audio files imported into this app. Selecting songs from a
+Spotify or Apple Music subscription would require those services and is not a
+fully offline feature.
+
+## Prototype 2.5 controller reliability update
+
+- BLE write callbacks now only enqueue command bytes. Parsing, device-map
+  access, I²C relay changes, and BLE replies run safely from Arduino `loop()`.
+- Command-triggered Firebase HTTPS updates run on a low-priority worker instead
+  of blocking the local HTTP server and BLE control loop.
+- Each BLE reply has a monotonically increasing response sequence, preventing
+  Flutter from mistaking an old characteristic value for a new command result.
+- Flutter completes its initial BLE status/device refresh before allowing the
+  first assistant command and briefly serializes overlapping BLE operations.
+- Every I²C controller has a 30 ms transaction timeout so a disconnected or
+  stuck PCF8574 bus cannot hold the controller indefinitely.
+- Firmware reports `2.5.0-freeze-safe-assistant` and the Flutter build is
+  `2.5.0+40`.
 
 ## Prototype 2.4 interface and voice fixes
 
@@ -26,7 +64,7 @@
   state.
 - Assistant-name changes, commands, device state, sensors, and speech output
   share the same HTTP/BLE contract.
-- Firmware reports version `2.4.0-offline-assistant`, allowing the app and
+- Firmware reports version `2.5.0-freeze-safe-assistant`, allowing the app and
   serial/BLE diagnostics to identify the integrated build.
 
 ## Prototype 2.2 room and voice update

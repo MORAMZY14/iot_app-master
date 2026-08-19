@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -9,6 +11,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 
 import '../ble_service.dart';
 import 'ellie_language.dart';
+import 'local_music_service.dart';
 import 'offline_assistant.dart';
 
 enum EllieOutputMode { phone, esp32, both }
@@ -67,6 +70,7 @@ class EllieVoiceController {
     required this.esp32BaseUri,
     this.assistantName = 'Ellie',
     this.bleService,
+    this.musicService,
     this.outputMode = EllieOutputMode.both,
     this.requireWakeWord = true,
     this.conversationWindow = const Duration(seconds: 30),
@@ -82,6 +86,7 @@ class EllieVoiceController {
   final Uri esp32BaseUri;
   final String assistantName;
   final BleService? bleService;
+  final LocalMusicService? musicService;
   final EllieOutputMode outputMode;
   final bool requireWakeWord;
   final Duration conversationWindow;
@@ -91,6 +96,8 @@ class EllieVoiceController {
   final FlutterTts _tts;
   final StreamController<EllieVoiceEvent> _events =
       StreamController<EllieVoiceEvent>.broadcast();
+  static const MethodChannel _iosLocalSpeechChannel =
+      MethodChannel('smarthome/local_speech');
 
   EllieLanguageMode _languageMode;
   EllieLanguage _lastDetectedLanguage = EllieLanguage.english;
@@ -98,8 +105,11 @@ class EllieVoiceController {
   EllieLanguage _activeRecognitionLanguage = EllieLanguage.english;
   List<String> _speechLocales = const <String>[];
   List<String> _ttsLanguages = const <String>[];
+  AudioSession? _audioSession;
   bool _initialized = false;
   bool _speechAvailable = false;
+  bool _ttsReady = false;
+  Object? _lastTtsError;
   bool _submittedCurrentSpeech = false;
   bool _disposed = false;
   String _lastTranscript = '';
@@ -126,6 +136,7 @@ class EllieVoiceController {
   Future<bool> initialize() async {
     if (_initialized) return _speechAvailable;
 
+    _initialized = true;
     try {
       _speechAvailable = await _speech.initialize(
         onStatus: _onSpeechStatus,
@@ -145,33 +156,52 @@ class EllieVoiceController {
           _lastDetectedLanguage = _systemLanguage;
         }
       }
-
-      final dynamic rawTtsLanguages = await _tts.getLanguages;
-      if (rawTtsLanguages is Iterable) {
-        _ttsLanguages = rawTtsLanguages.map((value) => '$value').toList();
-      }
-      await _tts.awaitSpeakCompletion(true);
-      await _configurePhoneAudioSession();
-      await _tts.setSpeechRate(0.46);
-      await _tts.setPitch(1.0);
-      await _tts.setVolume(1.0);
-
-      _initialized = true;
-      unawaited(_syncAssistantNameToEsp32());
-      _emit(EllieVoiceEvent(
-        phase: EllieVoicePhase.idle,
-        language: _languageForMode(),
-      ));
-      return _speechAvailable;
     } catch (error) {
       _speechAvailable = false;
-      _initialized = false;
       _emit(EllieVoiceEvent(
         phase: EllieVoicePhase.error,
         language: _languageForMode(),
         error: error,
       ));
-      return false;
+    }
+
+    // Microphone permission and text-to-speech are independent. A denied or
+    // unavailable speech recognizer must not disable typed commands or replies.
+    await _initializePhoneTts();
+    unawaited(_syncAssistantNameToEsp32());
+    _emit(EllieVoiceEvent(
+      phase: EllieVoicePhase.idle,
+      language: _languageForMode(),
+      warning: !_ttsReady && _phoneSpeechEnabled
+          ? EllieLanguageTools.pick(
+              _languageForMode(),
+              english:
+                  'Phone voice needs attention. Tap the speaker button to retry.',
+              arabic: 'صوت الهاتف يحتاج إلى ضبط. اضغطي زر السماعة للمحاولة.',
+            )
+          : null,
+    ));
+    return _speechAvailable;
+  }
+
+  Future<void> _initializePhoneTts() async {
+    if (!_phoneSpeechEnabled || _ttsReady) return;
+    try {
+      final dynamic rawTtsLanguages = await _tts.getLanguages;
+      if (rawTtsLanguages is Iterable) {
+        _ttsLanguages = rawTtsLanguages.map((value) => '$value').toList();
+      }
+      await _tts.awaitSpeakCompletion(true);
+      await _tts.setSpeechRate(0.46);
+      await _tts.setPitch(1.0);
+      await _tts.setVolume(1.0);
+      await _configurePhoneAudioSession(activate: false);
+      _lastTtsError = null;
+      _ttsReady = true;
+    } catch (error) {
+      _lastTtsError = error;
+      _ttsReady = false;
+      if (kDebugMode) debugPrint('Phone TTS initialization failed: $error');
     }
   }
 
@@ -244,6 +274,7 @@ class EllieVoiceController {
     final text = transcript.trim();
     if (text.isEmpty || _disposed) return;
 
+    _submittedCurrentSpeech = true;
     await _speech.stop();
     final language = EllieLanguageTools.detect(text);
     _lastDetectedLanguage = language;
@@ -280,6 +311,15 @@ class EllieVoiceController {
       language: language,
       transcript: text,
     ));
+
+    final musicIntent = LocalMusicIntentParser.parse(
+      text,
+      assistantName: assistantName,
+    );
+    if (musicIntent != null && musicService != null) {
+      await _handleMusicIntent(musicIntent, language);
+      return;
+    }
 
     EllieLocalReply? local;
     Object? localConnectionError;
@@ -347,6 +387,42 @@ class EllieVoiceController {
       esp32AlreadyQueued: false,
       tryEsp32: false,
     );
+  }
+
+  Future<void> _handleMusicIntent(
+    LocalMusicIntent intent,
+    EllieLanguage language,
+  ) async {
+    try {
+      final plan = await musicService!.prepareCommand(
+        intent,
+        language: language,
+      );
+      final beforeReply = plan.beforeReply;
+      if (beforeReply != null) await beforeReply();
+      await _deliverReply(
+        plan.reply,
+        language: language,
+        esp32AlreadyQueued: false,
+        tryEsp32: false,
+      );
+      final afterReply = plan.afterReply;
+      if (afterReply != null) await afterReply();
+    } catch (error) {
+      if (kDebugMode) debugPrint('Local music command failed: $error');
+      await _deliverReply(
+        EllieLanguageTools.pick(
+          language,
+          english:
+              'I could not play that local audio file. Try importing it again as MP3, M4A, WAV, or AAC.',
+          arabic:
+              'لم أتمكن من تشغيل ملف الصوت المحلي. حاولي إضافته مرة أخرى بصيغة MP3 أو M4A أو WAV أو AAC.',
+        ),
+        language: language,
+        esp32AlreadyQueued: false,
+        tryEsp32: false,
+      );
+    }
   }
 
   void _onSpeechResult(SpeechRecognitionResult result) {
@@ -489,25 +565,62 @@ class EllieVoiceController {
       // speaking phase. TTS below reclaims the iOS playback audio session.
     }
 
-    final tasks = <Future<void>>[];
+    var resumeMusicAfterSpeech = false;
     if (_phoneSpeechEnabled) {
-      tasks.add(_speakOnPhone(reply, language));
-    }
-    if (_esp32SpeechEnabled && !esp32AlreadyQueued && tryEsp32) {
-      tasks.add(_speakOnEsp32(reply, language));
+      try {
+        resumeMusicAfterSpeech =
+            await musicService?.pauseForAssistant() ?? false;
+      } catch (_) {
+        resumeMusicAfterSpeech = false;
+      }
     }
 
-    String? warning;
-    for (final task in tasks) {
+    var phoneFailed = false;
+    var esp32Failed = false;
+    if (_phoneSpeechEnabled) {
       try {
-        await task;
-      } catch (_) {
-        warning = EllieLanguageTools.pick(
-          language,
-          english: 'One voice output was unavailable.',
-          arabic: 'تعذّر تشغيل أحد مخارج الصوت.',
-        );
+        await _speakOnPhone(reply, language);
+      } catch (error) {
+        phoneFailed = true;
+        _lastTtsError = error;
+        if (kDebugMode) debugPrint('Phone TTS reply failed: $error');
       }
+    }
+
+    if (_esp32SpeechEnabled && !esp32AlreadyQueued && tryEsp32) {
+      try {
+        await _speakOnEsp32(reply, language);
+      } catch (error) {
+        esp32Failed = true;
+        if (kDebugMode) debugPrint('ESP32 speech reply failed: $error');
+      }
+    }
+
+    if (resumeMusicAfterSpeech) {
+      try {
+        await musicService?.resumeAfterAssistant();
+      } catch (_) {
+        // The reply was still delivered. The user can say "resume music".
+      }
+    }
+
+    final String? warning;
+    if (phoneFailed) {
+      warning = EllieLanguageTools.pick(
+        language,
+        english:
+            'Phone voice was unavailable. Turn up media volume, then tap the speaker button to test it.',
+        arabic:
+            'صوت الهاتف غير متاح. ارفعي صوت الوسائط ثم اضغطي زر السماعة للاختبار.',
+      );
+    } else if (esp32Failed) {
+      warning = EllieLanguageTools.pick(
+        language,
+        english: 'Phone voice worked; the optional ESP32 speaker was unavailable.',
+        arabic: 'صوت الهاتف يعمل، لكن سماعة الـ ESP32 الاختيارية غير متاحة.',
+      );
+    } else {
+      warning = null;
     }
     _emit(EllieVoiceEvent(
       phase: EllieVoicePhase.idle,
@@ -518,50 +631,108 @@ class EllieVoiceController {
   }
 
   Future<void> _speakOnPhone(String text, EllieLanguage language) async {
-    await _tts.stop();
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-      // speech_to_text temporarily owns the iOS recording session. Allow it to
-      // release that session, then explicitly restore audible playback so the
-      // hardware silent switch does not mute assistant replies.
-      await Future<void>.delayed(const Duration(milliseconds: 180));
-    }
-    await _configurePhoneAudioSession();
-    final locale = _bestTtsLocale(language);
-    await _tts.setLanguage(locale);
-    await _tts.setVolume(1.0);
-    await _tts.setSpeechRate(language == EllieLanguage.arabic ? 0.42 : 0.46);
-    final timeoutSeconds = (8 + (text.length ~/ 8)).clamp(10, 36).toInt();
     try {
+      if (!_ttsReady) await _initializePhoneTts();
+      if (!_ttsReady) {
+        throw StateError(
+          'Phone text-to-speech is not ready. ${_lastTtsError ?? ''}',
+        );
+      }
+
+      await _tts.stop();
+      await _releaseIosRecognitionSession();
+      await _configurePhoneAudioSession(activate: true);
+      final locale = _bestTtsLocale(language);
+      final dynamic languageAvailable = await _tts.isLanguageAvailable(locale);
+      if (languageAvailable != true && languageAvailable != 1) {
+        throw StateError(
+          language == EllieLanguage.arabic
+              ? 'Install an Arabic system voice in the phone settings.'
+              : 'Install an English system voice in the phone settings.',
+        );
+      }
+      await _tts.setLanguage(locale);
+      await _tts.setVolume(1.0);
+      await _tts.setSpeechRate(language == EllieLanguage.arabic ? 0.42 : 0.46);
+      final timeoutSeconds = (8 + (text.length ~/ 8)).clamp(10, 36).toInt();
       final result = await _tts
           .speak(text)
           .timeout(Duration(seconds: timeoutSeconds));
       if (result != 1) {
         throw StateError('The phone text-to-speech engine did not start.');
       }
-    } on TimeoutException {
-      await _tts.stop();
-      throw StateError('Phone voice output timed out.');
+    } catch (flutterTtsError) {
+      if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) rethrow;
+      try {
+        await _tts.stop();
+      } catch (_) {
+        // Continue to the native iOS fallback even if the plugin is wedged.
+      }
+      if (kDebugMode) {
+        debugPrint('flutter_tts failed; using native iOS speech: $flutterTtsError');
+      }
+      await _speakWithNativeIos(text, language);
     }
   }
 
-  Future<void> _configurePhoneAudioSession() async {
+  Future<void> _releaseIosRecognitionSession() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+    // speech_to_text temporarily owns the iOS recording session. Cancel fully,
+    // then allow AVAudioSession to settle before claiming playback.
+    try {
+      await _speech.cancel();
+    } catch (_) {
+      // The recognizer may already be fully stopped.
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+  }
+
+  Future<void> _speakWithNativeIos(
+    String text,
+    EllieLanguage language,
+  ) async {
+    await _releaseIosRecognitionSession();
+    final timeoutSeconds = (8 + (text.length ~/ 8)).clamp(10, 36).toInt();
+    final spoken = await _iosLocalSpeechChannel.invokeMethod<bool>(
+      'speak',
+      <String, dynamic>{
+        'text': text,
+        'language': _bestTtsLocale(language),
+      },
+    ).timeout(Duration(seconds: timeoutSeconds));
+    if (spoken != true) {
+      throw StateError('The native iPhone voice did not complete playback.');
+    }
+  }
+
+  Future<void> _configurePhoneAudioSession({required bool activate}) async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
     await _tts.setSharedInstance(true);
+
+    // AVAudioSessionCategoryOptionAllowBluetooth is intended for recording/
+    // play-and-record routes and can make a playback-only category fail on
+    // some iOS versions. A2DP routes are automatic for playback, so keep only
+    // the options that are valid for spoken playback.
     await _tts.setIosAudioCategory(
       IosTextToSpeechAudioCategory.playback,
       <IosTextToSpeechAudioCategoryOptions>[
-        IosTextToSpeechAudioCategoryOptions.allowBluetooth,
-        IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
         IosTextToSpeechAudioCategoryOptions.duckOthers,
         IosTextToSpeechAudioCategoryOptions
             .interruptSpokenAudioAndMixWithOthers,
       ],
       IosTextToSpeechAudioMode.voicePrompt,
     );
+    final session = _audioSession ??= await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.speech());
+    if (activate && !await session.setActive(true)) {
+      throw StateError('iOS did not grant the assistant audio playback session.');
+    }
   }
 
   Future<void> testPhoneVoice() async {
     await initialize();
+    _ttsReady = false;
+    await _initializePhoneTts();
     final language = _languageForMode();
     await _deliverReply(
       EllieLanguageTools.pick(

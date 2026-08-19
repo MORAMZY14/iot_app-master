@@ -122,9 +122,9 @@ class OfflineAssistant {
       return _reply(
         language,
         english:
-            'I can control named rooms and devices through the ESP32, report local sensor information, and answer simple time, date, and help questions.',
+            'I can control one or several named devices through the ESP32, play songs imported into the phone, report local sensors, and answer time or date questions.',
         arabic:
-            'أقدر أتحكم في الغرف والأجهزة عن طريق الـ ESP، وأعرض بيانات الحساسات، وأجيب عن أسئلة بسيطة مثل الوقت والتاريخ والمساعدة.',
+            'أقدر أتحكم في جهاز واحد أو عدة أجهزة عن طريق الـ ESP، وأشغل الأغاني المحفوظة في الهاتف، وأعرض الحساسات والوقت والتاريخ.',
       );
     }
 
@@ -150,9 +150,9 @@ class OfflineAssistant {
     return _reply(
       language,
       english:
-          'I work locally and do not generate open-ended cloud answers. Try a room or device command, or ask for help, the time, or the date.',
+          'I work locally and do not generate open-ended cloud answers. Try a room, device, or local music command, or ask for help, the time, or the date.',
       arabic:
-          'أنا أعمل محلياً ولا أُنشئ إجابات سحابية مفتوحة. جرّبي أمر غرفة أو جهاز، أو اسألي عن المساعدة أو الوقت أو التاريخ.',
+          'أنا أعمل محلياً ولا أُنشئ إجابات سحابية مفتوحة. جرّبي أمر غرفة أو جهاز أو موسيقى محلية، أو اسألي عن المساعدة أو الوقت أو التاريخ.',
     );
   }
 
