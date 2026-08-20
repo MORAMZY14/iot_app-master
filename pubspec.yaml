@@ -85,9 +85,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # Keep the iOS lifecycle identical to the original working application.
-  # Revisit UIScene only after every native plugin in this project supports it.
+  # Several required native plugins still use CocoaPods. Prevent Flutter 3.44+
+  # from rewriting this iOS project for Swift Package Manager during CI.
   config:
+    enable-swift-package-manager: false
     enable-uiscene-migration: false
   assets:
     - assets/images/   # <--- Fixed space after dash

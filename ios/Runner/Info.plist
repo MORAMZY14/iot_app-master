@@ -7,7 +7,7 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 
 	<key>CFBundleDisplayName</key>
-	<string>Iot App</string>
+	<string>SmartHome</string>
 
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
@@ -19,7 +19,7 @@
 	<string>6.0</string>
 
 	<key>CFBundleName</key>
-	<string>iot_app</string>
+	<string>SmartHome</string>
 
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
@@ -63,6 +63,13 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 
+	<!-- ALLOW IMPORTING A LARGE LOCAL MODEL THROUGH FILES/FINDER -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+
 	<!-- CAMERA -->
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs camera access.</string>
@@ -80,10 +87,10 @@
 
 	<!-- MICROPHONE AND SPEECH RECOGNITION -->
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Ellie uses the microphone to understand English and Arabic voice commands.</string>
+	<string>Your smart-home voice assistant uses the microphone to understand English and Arabic voice commands.</string>
 
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Ellie converts English and Arabic speech into commands and conversation text.</string>
+	<string>Your smart-home voice assistant converts English and Arabic speech into commands and conversation text.</string>
 
 	<!-- LOCAL NETWORK -->
 	<key>NSLocalNetworkUsageDescription</key>

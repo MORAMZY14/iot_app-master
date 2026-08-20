@@ -23,6 +23,11 @@ Because 2.7 adds a native MediaPipe/LiteRT model runtime, use Flutter with Dart
 3.6 or newer and run `flutter clean` once before the first 2.7 build, then run
 `flutter pub get` again. Mobile targets are Android API 24+ and iOS 16+.
 
+This project temporarily disables Flutter's Swift Package Manager integration
+because several required plugins, including `flutter_gemma`, still use
+CocoaPods. The iOS Podfile, Xcode project, Flutter framework plist, and all pods
+are pinned to iOS 16.0. Do not accept an automated migration back to iOS 15.
+
 To create a trained model, follow [`training/README.md`](training/README.md).
 Copy the resulting `.task` file to the phone, open the center assistant button,
 then use **brain/Model → Import `.task` model**. No model is downloaded by the
@@ -131,12 +136,18 @@ Output: `build/app/outputs/flutter-apk/app-release.apk`
 No `key.properties`, private keystore, upload key, or Google Play signing setup
 is included.
 
+The Android project compiles against API 35. The Gradle/AGP/Kotlin notices from
+new Flutter versions are deprecation warnings, not the resource-linking error;
+do not use `--android-skip-build-dependency-validation` to hide them. The old
+`android:postSplashScreenTheme` entry was invalid and has been removed.
+
 ## 5. Unsigned iOS IPA
 
 Use a Mac with Flutter, Xcode, and CocoaPods:
 
 ```bash
 flutter clean
+flutter config --no-enable-swift-package-manager
 flutter pub get
 cd ios && pod install --repo-update && cd ..
 
@@ -151,6 +162,10 @@ zip -r iot-unsigned.ipa Payload
 
 The resulting IPA is unsigned and not directly installable. The included GitHub
 Actions workflow automates the same no-codesign packaging flow.
+
+The warning `Building for device with codesigning disabled` is expected. It is
+not a build failure. A physical iPhone still requires the finished IPA to be
+signed later with an Apple development/ad-hoc identity before installation.
 
 ## 6. Optional web preview
 
