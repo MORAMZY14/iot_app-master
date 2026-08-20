@@ -19,8 +19,14 @@ flutter test
 
 Install offline English and Arabic speech-recognition/TTS voices in the phone's
 system settings. The app deliberately does not fall back to network recognition.
-Because 2.6 adds native local-audio packages, run `flutter clean` once before
-the first 2.6 build, then run `flutter pub get` again.
+Because 2.7 adds a native MediaPipe/LiteRT model runtime, use Flutter with Dart
+3.6 or newer and run `flutter clean` once before the first 2.7 build, then run
+`flutter pub get` again. Mobile targets are Android API 24+ and iOS 16+.
+
+To create a trained model, follow [`training/README.md`](training/README.md).
+Copy the resulting `.task` file to the phone, open the center assistant button,
+then use **brain/Model → Import `.task` model**. No model is downloaded by the
+app and no Hugging Face/OpenAI credential is compiled into it.
 
 In the assistant, tap the music-library icon, choose **Add songs**, and select
 local audio files from Files. The app copies them into its private sandbox so
@@ -61,9 +67,9 @@ ESP8266Audio and ESP8266SAM only if local English speech through an I2S speaker
 **Upload**, and open Serial Monitor at 115200 baud.
 
 For this build, confirm that BLE status or Serial diagnostics report
-`2.6.0-music-multidevice`. The matching Flutter build is `2.6.0+41`; update
-both sides together. This retains BLE response sequencing and adds multiple
-named-device targeting.
+`2.6.0-music-multidevice`. Flutter `2.7.0+42` deliberately keeps that local
+firmware protocol while adding the phone model; the ESP32 does not need the LLM
+or a model file.
 
 The sketch keeps the supplied GPIO, PCF8574, BLE, HTTP, sensor, device, and
 optional Firebase synchronization code. Assistant processing is fully local:
@@ -99,7 +105,7 @@ The command `turn off two devices` should ask you to name them.
 Open the assistant and tap the speaker icon. You should hear the customer
 assistant name through the current iPhone media route. If not, raise **media**
 volume (not ringtone volume), disconnect an unwanted Bluetooth audio route, and
-install the selected English/Arabic system voice. Version 2.6 uses the phone as
+install the selected English/Arabic system voice. Version 2.7 uses the phone as
 the default bilingual reply speaker; the ESP32 I²S speaker is optional.
 
 ## 4. Android test APK — no production key
@@ -154,9 +160,11 @@ firebase login
 firebase deploy --only hosting --project "iot-smart-home-81abd"
 ```
 
-Typed local assistant commands can be tested in a compatible browser. Offline
-browser speech recognition varies by browser, and an HTTPS page normally cannot
-call an ESP32's plain HTTP address because of mixed-content and CORS rules.
+Typed deterministic assistant commands can be tested in a compatible browser.
+The imported mobile `.task` model is intentionally Android/iOS-only in this
+prototype. Offline browser speech recognition varies by browser, and an HTTPS
+page normally cannot call an ESP32's plain HTTP address because of mixed-content
+and CORS rules.
 
 ## 7. Direct ESP32 microphone option
 

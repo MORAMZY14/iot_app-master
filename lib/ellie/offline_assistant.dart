@@ -150,9 +150,9 @@ class OfflineAssistant {
     return _reply(
       language,
       english:
-          'I work locally and do not generate open-ended cloud answers. Try a room, device, or local music command, or ask for help, the time, or the date.',
+          'I work locally. Import a trained `.task` model from the Model screen for open conversation, or try a room, device, or local music command.',
       arabic:
-          'أنا أعمل محلياً ولا أُنشئ إجابات سحابية مفتوحة. جرّبي أمر غرفة أو جهاز أو موسيقى محلية، أو اسألي عن المساعدة أو الوقت أو التاريخ.',
+          'أنا أعمل محلياً. أضيفي نموذج `.task` مدرّباً من شاشة Model للمحادثة المفتوحة، أو جرّبي أمر غرفة أو جهاز أو موسيقى محلية.',
     );
   }
 

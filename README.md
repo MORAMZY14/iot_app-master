@@ -1,4 +1,23 @@
-# SmartHome 2.6 — local music, multi-device commands, and audible replies
+# SmartHome 2.7 — trained local phone AI + safe ESP32 control
+
+## Prototype 2.7 on-device LLM update
+
+- The Android/iOS Flutter app now runs an imported Gemma 3 model locally with
+  `flutter_gemma`; open conversation no longer stops at the rule-based bot.
+- The assistant's brain/Model screen imports, replaces, retries, resets, or
+  removes a quantized `.task` model stored in the app's private sandbox.
+- A complete laptop kit under [`training/`](training/README.md) validates a
+  bilingual JSONL dataset, fine-tunes Gemma 3 1B with QLoRA, merges the adapter,
+  converts it to LiteRT, and bundles a MediaPipe `.task` file.
+- The model can normalize natural home wording, but cannot operate pins. Every
+  proposed device command must still be recognized and confirmed by the
+  deterministic ESP32 parser.
+- If no model is imported or inference fails, the existing deterministic local
+  replies remain available. Voice output still uses installed phone TTS.
+- Flutter is `2.7.0+42`; it remains compatible with the integrated
+  `2.6.0-music-multidevice` ESP32 firmware.
+- Mobile model inference requires Android API 24+ or iOS 16+. No trained model
+  weights or signing credentials are included in this source archive.
 
 ## Prototype 2.6 assistant update
 
@@ -78,11 +97,11 @@ fully offline feature.
   audible when the hardware silent switch is enabled. Use the speaker icon in
   the assistant header to test it.
 
-The current open-ended fallback is intentionally deterministic; it is not a
-trained language model. A genuine no-cloud conversational assistant requires
-an on-device model running on the phone. The ESP32 remains the safe home-command
-executor because it cannot run a useful conversational LLM. See
-`OFFLINE_AI_ARCHITECTURE.md` for the recommended design.
+When a compatible `.task` file is imported, open-ended conversation is produced
+by the trained on-device phone model. Without a model, the deterministic
+fallback remains available. The ESP32 stays the safe home-command executor
+because it cannot run a useful conversational LLM. See
+`OFFLINE_AI_ARCHITECTURE.md` for the implemented design.
 
 This Flutter project uses the room-first dashboard and a bilingual English and
 Arabic voice assistant. The assistant now runs without OpenAI, a remote AI API,
@@ -95,11 +114,14 @@ speech, or store the assistant name.
 ## Local assistant architecture
 
 1. Flutter requests the phone's installed on-device speech recognizer.
-2. Recognized text is sent to the ESP32 over local Wi-Fi, with BLE fallback.
-3. The ESP32 handles deterministic room, relay, device, and sensor intents.
-4. Flutter provides built-in local replies for help, identity, time, date,
-   greetings, thanks, and unsupported requests.
-5. Replies use an installed phone TTS voice. English can also use the existing
+2. Normal conversation goes directly to the imported phone model, without
+   waiting for an ESP32 network/BLE attempt.
+3. Device/sensor text is sent to the ESP32 over local Wi-Fi, with BLE fallback.
+4. The ESP32 handles deterministic room, relay, device, and sensor intents.
+5. A locally imported phone model can propose a
+   normalized command; the ESP32 must validate it before any action.
+6. Flutter keeps built-in deterministic replies as a no-model/error fallback.
+7. Replies use an installed phone TTS voice. English can also use the existing
    ESP32 local speaker path.
 
 There is no OpenAI package, assistant server, API key, cloud TTS ticket, or
@@ -129,7 +151,10 @@ Firebase or sent to a remote assistant.
 - Install English and Arabic speech-recognition and TTS language packs in the
   phone settings before testing.
 - Typed commands remain available when an offline speech pack is unavailable.
-- The local assistant is deterministic, not a general generative chatbot.
+- Open conversation needs a successfully imported mobile `.task` model. The
+  source package intentionally contains no model weights.
+- The model runs on Android/iOS only in this prototype; web keeps deterministic
+  fallback behavior.
 - Arabic replies are spoken by the installed phone voice. ESP32 Arabic output
   requires known audio clips stored locally in its flash.
 - A basic ESP32 receives recognized text from Flutter. Direct microphone-based

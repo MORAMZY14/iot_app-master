@@ -6,6 +6,7 @@ firmware="$project_root/esp32_firmware/SmartHomeOffline/SmartHomeOffline.ino"
 voice="$project_root/lib/ellie/ellie_voice_controller.dart"
 ble="$project_root/lib/ble_service.dart"
 dashboard="$project_root/lib/dashboard_page.dart"
+llm="$project_root/lib/ellie/local_llm_service.dart"
 
 require_pattern() {
   local pattern="$1"
@@ -27,7 +28,7 @@ require_pattern "resolve\('/api/assistant/name'\)" "$voice"
 require_pattern "'cmd': 'ellie'" "$ble"
 require_pattern "'cmd': 'set_assistant_name'" "$ble"
 require_pattern '_resolveAssistantEsp32Ip' "$dashboard"
-require_pattern 'version: 2\.6\.0\+41' "$project_root/pubspec.yaml"
+require_pattern 'version: 2\.7\.0\+42' "$project_root/pubspec.yaml"
 require_pattern '_ensureBleConnected' "$voice"
 require_pattern '_configurePhoneAudioSession' "$voice"
 require_pattern 'englishPowerPhrase' "$voice"
@@ -48,6 +49,16 @@ require_pattern 'FileType\.audio' "$project_root/lib/ellie/local_music_service.d
 require_pattern 'getApplicationSupportDirectory' "$project_root/lib/ellie/local_music_storage_io.dart"
 require_pattern 'smarthome/local_speech' "$voice"
 require_pattern 'AVSpeechSynthesizer' "$project_root/ios/Runner/AppDelegate.swift"
+require_pattern 'flutter_gemma: 0\.16\.5' "$project_root/pubspec.yaml"
+require_pattern 'FlutterGemma\.installModel' "$llm"
+require_pattern '\.fromFile\(path\)' "$llm"
+require_pattern 'allowDeviceCommand' "$llm"
+require_pattern 'LocalCommandProposalGuard\.preservesUserScope' "$voice"
+require_pattern 'llmService: _llmService' "$project_root/lib/ellie/ellie_assistant_sheet.dart"
+require_pattern 'minSdk = 24' "$project_root/android/app/build.gradle.kts"
+require_pattern "platform :ios, '16\.0'" "$project_root/ios/Podfile"
+require_pattern 'build_model_1b' "$project_root/training/convert_to_tflite.py"
+require_pattern 'bundler\.create_bundle' "$project_root/training/bundle_task.py"
 if rg -q -- 'onEllie' "$dashboard"; then
   echo "The duplicate assistant action is still present in the top app bar" >&2
   exit 1
@@ -77,6 +88,15 @@ if rg -q -- '/api/ellie/audio|needsCloud|ELLIE_BACKEND_URL|queueEllieAudioUrl' \
   echo "A removed cloud-assistant contract is still present" >&2
   exit 1
 fi
+
+if rg -q -- '\.fromNetwork\(|huggingFaceToken|OPENAI_API_KEY' \
+  "$project_root/lib"; then
+  echo "The Flutter runtime still contains a remote model/token path" >&2
+  exit 1
+fi
+
+python3 "$project_root/training/validate_dataset.py" \
+  "$project_root/training/dataset/smarthome_train.jsonl"
 
 echo "Offline assistant integration contract: OK"
 echo "BLE service UUID: $firmware_service_uuid"

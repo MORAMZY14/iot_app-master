@@ -1,38 +1,59 @@
 # Fully offline conversational assistant
 
-The current Flutter assistant handles on-device speech recognition, phone TTS,
-and local ESP32 commands. Its open-ended fallback is rule-based, not a trained
-AI model.
+Version 2.7 implements the conversational model inside the Android/iOS Flutter
+app. It uses an imported, quantized Gemma 3 `.task` model through MediaPipe and
+`flutter_gemma`. It has no OpenAI client, hosted inference endpoint, model URL,
+API token, or remote fallback.
 
-For a genuine conversational assistant without OpenAI or cloud inference, use
-this split:
+## Runtime boundary
 
-1. Flutter phone: runs a quantized multilingual language model and keeps the
-   chat context.
-2. ESP32: exposes a strict local command API and controls the relays/sensors.
-3. Flutter validates a model-proposed home action against the actual room and
-   device list before sending it to the ESP32.
-4. Phone TTS speaks the final answer. The ESP32 speaker remains an optional
-   English command-confirmation output.
+1. The phone's installed on-device recognizer converts English/Arabic speech to
+   text.
+2. Existing deterministic music commands run against files imported into the
+   app.
+3. Flutter sends possible home commands to the ESP32 over local HTTP/BLE.
+4. If natural wording needs normalization, the phone model may propose one
+   canonical command.
+5. Flutter accepts only a short on/off command and sends it back through the
+   ESP32's existing room/device parser. Only an ESP32-confirmed match changes a
+   relay.
+6. Normal conversation is generated locally by the phone model. The installed
+   phone TTS voice speaks the final response.
 
-Recommended prototype model: Qwen3 0.6B through LiteRT-LM / flutter_gemma. It
-is multilingual, supports function calling, and is about 586 MB. The model can
-be downloaded once into app-private storage and then used with airplane mode.
-Bundling it in the application is also possible, but makes the install package
-very large.
+The model cannot directly access GPIO, BLE, HTTP, Firebase, or the device map.
+This protects the home from hallucinated targets or generated tool calls.
 
-Do not attempt to run the conversational model on an ESP32. Even the smallest
-useful trained chat models need hundreds of megabytes of storage and far more
-RAM than an ESP32 provides. Keep the ESP32 deterministic so a generated answer
-cannot directly perform an unsafe or nonexistent device action.
+## Model lifecycle
 
-Before integrating the model runtime, choose the target hardware and delivery
-method:
+- Fine-tune `google/gemma-3-1b-it` on a laptop using the included
+  [`training/`](training/README.md) kit.
+- Merge the LoRA adapter, convert/quantize it with LiteRT Torch, and bundle the
+  model plus tokenizer into one MediaPipe `.task` file.
+- Copy that file to the phone and use **Assistant → brain/Model → Import**.
+- Flutter copies it into application-private support storage. It is loaded only
+  on Android/iOS and remains available after a restart.
+- Reset conversation clears context. Remove deletes the app's private model
+  copy without touching the original laptop file.
 
-- one-time in-app download (smaller app package; recommended), or
-- model bundled with the app (very large package; fully offline from first
-  launch).
+No model weights are bundled in this source archive. A Gemma 3 1B mobile model
+is hundreds of MB, and redistribution must comply with the Gemma license.
 
-The project deliberately does not pretend the rule-based fallback is a trained
-AI. Keep this boundary visible until the model runtime and model file have both
-been installed and tested on the target iPhone/Android device.
+## What “trained” means
+
+Gemma is already pretrained on language and instruction-following. The included
+QLoRA pipeline fine-tunes it for customer vocabulary, English/Arabic style,
+command normalization, and the strict JSON envelope used by the app. A small
+smart-home dataset does not train a general LLM from zero. Reliable customer
+behavior requires many reviewed examples and held-out tests.
+
+## Hardware limits
+
+The phone runs the LLM. A normal ESP32 does not have enough RAM or storage for
+a useful conversational model. The ESP32 remains a fast deterministic control
+and sensor board. An ESP32-S3 with suitable microphone/PSRAM can optionally run
+fixed command recognition, but not this open-ended bilingual model.
+
+Mobile requirements for this build are Android API 24+ or iOS 16+. The `.task`
+runtime uses the CPU for compatibility with the official fine-tuned-model
+conversion path. Initial loading and replies take longer than deterministic
+commands, especially on older phones.

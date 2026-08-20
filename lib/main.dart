@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dashboard_page.dart';
@@ -12,10 +13,14 @@ import 'splash_screen.dart';  // 🔥 NEW: Import your splash screen
 import 'login_screen.dart';
 import 'app_constants.dart';
 
-const String appVersion = '2.2.2';
+const String appVersion = AppConfig.appVersion;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // The app only installs user-selected local files. No Hugging Face token,
+  // download URL, OpenAI key, or cloud fallback is configured.
+  FlutterGemma.initialize();
+  FlutterGemma.logLevel = GemmaLogLevel.none;
 
   // Run the Flutter UI immediately. Firebase is initialized by the providers
   // while the SplashScreen is already visible, so the user no longer sees a

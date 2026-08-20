@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../ble_service.dart';
 import 'ellie_language.dart';
 import 'ellie_voice_controller.dart';
+import 'local_llm_service.dart';
 import 'local_music_service.dart';
 
 class EllieAssistantSheet extends StatefulWidget {
@@ -29,6 +30,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
 
   late final EllieVoiceController _controller;
   late final LocalMusicService _musicService;
+  late final LocalLlmService _llmService;
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<_EllieMessage> _messages = <_EllieMessage>[];
@@ -46,7 +48,9 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
   void initState() {
     super.initState();
     _musicService = LocalMusicService.instance;
+    _llmService = LocalLlmService.instance;
     _musicService.addListener(_handleMusicChanged);
+    _llmService.addListener(_handleLlmChanged);
     _bleStatus = widget.bleService.currentStatus;
     _bleSubscription = widget.bleService.statusStream.listen((status) {
       if (!mounted) return;
@@ -55,12 +59,12 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
     _messages.addAll(<_EllieMessage>[
       _EllieMessage(
         text:
-            'Hi, I’m ${widget.assistantName}. Say my name, then try “turn off TV and Lamp” or “play a song.” Add local songs with the music button.',
+            'Hi, I’m ${widget.assistantName}. Import your trained local AI with the brain button, then talk normally or try “turn off TV and Lamp.”',
         language: EllieLanguage.english,
       ),
       _EllieMessage(
         text:
-            'مرحباً، أنا ${widget.assistantName}. قولي اسمي ثم جرّبي «اطفي التلفزيون والمروحة» أو «شغلي أغنية». أضيفي الأغاني من زر الموسيقى.',
+            'مرحباً، أنا ${widget.assistantName}. أضيفي نموذج الذكاء المحلي المدرّب من زر الدماغ، ثم تحدثي بشكل طبيعي أو قولي «اطفي التلفزيون والمروحة».',
         language: EllieLanguage.arabic,
       ),
     ]);
@@ -69,6 +73,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
       assistantName: widget.assistantName,
       bleService: widget.bleService,
       musicService: _musicService,
+      llmService: _llmService,
       // The phone is the dependable bilingual speaker. ESP32 speech remains
       // available in firmware, but is optional hardware and English-only.
       outputMode: EllieOutputMode.phone,
@@ -79,7 +84,10 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
   }
 
   Future<void> _initialize() async {
-    await _musicService.initialize();
+    await Future.wait<void>(<Future<void>>[
+      _musicService.initialize(),
+      _llmService.initialize(),
+    ]);
     final preferences = await SharedPreferences.getInstance();
     final savedMode = EllieLanguageTools.modeFromStorage(
       preferences.getString(_languagePreferenceKey),
@@ -91,6 +99,10 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
   }
 
   void _handleMusicChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _handleLlmChanged() {
     if (mounted) setState(() {});
   }
 
@@ -196,6 +208,18 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
     );
   }
 
+  Future<void> _showLocalAiManager() async {
+    await _llmService.initialize();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (context) => _LocalAiManagerSheet(service: _llmService),
+    );
+  }
+
   bool get _isBusy =>
       _event.phase == EllieVoicePhase.thinking ||
       _event.phase == EllieVoicePhase.speaking;
@@ -206,6 +230,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
     unawaited(_bleSubscription?.cancel());
     unawaited(_controller.dispose());
     _musicService.removeListener(_handleMusicChanged);
+    _llmService.removeListener(_handleLlmChanged);
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -246,6 +271,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
             ),
             _buildHeader(context),
             _buildLanguageSelector(context),
+            _buildAiNotice(context),
             _buildLocalNotice(context),
             Divider(height: 1, color: colors.outlineVariant),
             Expanded(
@@ -262,7 +288,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
               child: Text(
-                'On-device speech + local music + ESP32 commands · نطق وموسيقى محلية وأوامر ESP',
+                'Local AI + on-device speech + ESP32 safety · ذكاء ونطق محلي مع أمان ESP',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: colors.onSurfaceVariant.withValues(alpha: 0.72),
@@ -310,6 +336,19 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
                   style: TextStyle(fontSize: 12),
                 ),
               ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Local AI model · نموذج الذكاء المحلي',
+            onPressed: _isBusy ? null : () => unawaited(_showLocalAiManager()),
+            icon: Badge(
+              isLabelVisible: _llmService.isReady,
+              backgroundColor: Colors.greenAccent.shade400,
+              child: Icon(
+                _llmService.isGenerating
+                    ? Icons.psychology_alt_rounded
+                    : Icons.psychology_rounded,
+              ),
             ),
           ),
           IconButton(
@@ -365,6 +404,76 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
             ),
           );
         }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildAiNotice(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final LocalLlmState state = _llmService.state;
+    final IconData icon;
+    final Color accent;
+    final String message;
+    switch (state) {
+      case LocalLlmState.ready:
+        icon = Icons.psychology_rounded;
+        accent = Colors.greenAccent.shade400;
+        message =
+            'Local AI ready: ${_llmService.modelName ?? 'trained model'}. Conversation stays on this phone.';
+        break;
+      case LocalLlmState.generating:
+        icon = Icons.psychology_alt_rounded;
+        accent = colors.primary;
+        message = 'The local AI is thinking on this phone…';
+        break;
+      case LocalLlmState.loading:
+        icon = Icons.downloading_rounded;
+        accent = colors.primary;
+        message = 'Loading the private on-device model…';
+        break;
+      case LocalLlmState.error:
+        icon = Icons.error_outline_rounded;
+        accent = colors.error;
+        message = 'The local AI needs attention. Open Model to retry or replace it.';
+        break;
+      case LocalLlmState.unsupported:
+        icon = Icons.phone_android_rounded;
+        accent = colors.error;
+        message = 'Local `.task` inference is available in the Android/iOS app.';
+        break;
+      case LocalLlmState.notInstalled:
+        icon = Icons.psychology_outlined;
+        accent = colors.tertiary;
+        message = 'Import your trained `.task` model to enable real offline conversation.';
+        break;
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.fromLTRB(11, 8, 7, 8),
+      decoration: BoxDecoration(
+        color: colors.tertiaryContainer.withValues(alpha: 0.38),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 20, color: accent),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                fontSize: 11.5,
+                color: colors.onTertiaryContainer,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: _isBusy ? null : () => unawaited(_showLocalAiManager()),
+            child: const Text('Model'),
+          ),
+        ],
       ),
     );
   }
@@ -563,6 +672,230 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
             onPressed: _isBusy ? null : () => unawaited(_sendTypedMessage()),
             icon: const Icon(Icons.send_rounded),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LocalAiManagerSheet extends StatefulWidget {
+  const _LocalAiManagerSheet({required this.service});
+
+  final LocalLlmService service;
+
+  @override
+  State<_LocalAiManagerSheet> createState() => _LocalAiManagerSheetState();
+}
+
+class _LocalAiManagerSheetState extends State<_LocalAiManagerSheet> {
+  bool _working = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.service.addListener(_handleChanged);
+  }
+
+  void _handleChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _importModel() async {
+    if (_working) return;
+    setState(() => _working = true);
+    final imported = await widget.service.importModel();
+    if (!mounted) return;
+    setState(() => _working = false);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        imported
+            ? 'Local AI model installed. You can now talk offline.'
+            : widget.service.lastError ?? 'No model was selected.',
+      ),
+    ));
+  }
+
+  Future<void> _retry() async {
+    if (_working) return;
+    setState(() => _working = true);
+    await widget.service.initialize(retry: true);
+    if (mounted) setState(() => _working = false);
+  }
+
+  Future<void> _removeModel() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove local AI model?'),
+        content: const Text(
+          'This deletes the app’s private copy from this phone. Your original laptop model is not changed.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _working = true);
+    await widget.service.removeModel();
+    if (mounted) setState(() => _working = false);
+  }
+
+  @override
+  void dispose() {
+    widget.service.removeListener(_handleChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final state = widget.service.state;
+    final ready = widget.service.isReady;
+    final busy = _working ||
+        state == LocalLlmState.loading ||
+        state == LocalLlmState.generating;
+    final String status;
+    switch (state) {
+      case LocalLlmState.ready:
+        status = 'Ready for private offline conversation';
+        break;
+      case LocalLlmState.generating:
+        status = 'Generating locally on this phone…';
+        break;
+      case LocalLlmState.loading:
+        status = 'Loading and checking the model…';
+        break;
+      case LocalLlmState.error:
+        status = 'Could not load the current model';
+        break;
+      case LocalLlmState.unsupported:
+        status = 'Use an Android or iOS build for mobile `.task` inference';
+        break;
+      case LocalLlmState.notInstalled:
+        status = 'No local model installed';
+        break;
+    }
+
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * 0.64,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 6, 20, 28),
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              CircleAvatar(
+                backgroundColor: ready
+                    ? Colors.greenAccent.shade400.withValues(alpha: 0.18)
+                    : colors.tertiaryContainer,
+                child: Icon(Icons.psychology_rounded, color: colors.tertiary),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Private local AI',
+                      style: TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text('Gemma `.task` model · no assistant cloud'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: colors.surfaceContainerHighest.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  status,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                if (widget.service.modelName != null) ...<Widget>[
+                  const SizedBox(height: 5),
+                  Text(
+                    widget.service.modelName!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                if (widget.service.lastError != null) ...<Widget>[
+                  const SizedBox(height: 8),
+                  Text(
+                    widget.service.lastError!,
+                    style: TextStyle(color: colors.error, fontSize: 12),
+                  ),
+                ],
+                if (busy) ...<Widget>[
+                  const SizedBox(height: 12),
+                  const LinearProgressIndicator(),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'Train or fine-tune Gemma 3 1B on your laptop, convert it to a quantized MediaPipe `.task` file, copy it to this phone, then tap Import. The model is stored privately and runs without an API key.',
+            style: TextStyle(height: 1.45),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Home-control safety: the AI may rewrite a request, but only the ESP32’s known room/device parser can approve and execute it.',
+            style: TextStyle(fontSize: 12, height: 1.4),
+          ),
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: busy || !widget.service.isSupported ? null : _importModel,
+            icon: const Icon(Icons.file_open_rounded),
+            label: Text(
+              ready ? 'Replace `.task` model' : 'Import `.task` model',
+            ),
+          ),
+          if (state == LocalLlmState.error) ...<Widget>[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: busy ? null : _retry,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry current model'),
+            ),
+          ],
+          if (ready) ...<Widget>[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: busy
+                  ? null
+                  : () => unawaited(widget.service.resetConversation()),
+              icon: const Icon(Icons.restart_alt_rounded),
+              label: const Text('Start a new conversation'),
+            ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: busy ? null : _removeModel,
+              icon: Icon(Icons.delete_outline_rounded, color: colors.error),
+              label: Text(
+                'Remove from this phone',
+                style: TextStyle(color: colors.error),
+              ),
+            ),
+          ],
         ],
       ),
     );

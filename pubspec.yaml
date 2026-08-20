@@ -2,10 +2,10 @@ name: iot
 description: "IoT-Smart-Home."
 publish_to: 'none'
 
-version: 2.6.0+41
+version: 2.7.0+42
 
 environment:
-  sdk: '>=3.4.3 <4.0.0'
+  sdk: '>=3.6.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -73,6 +73,8 @@ dependencies:
   # Ellie bilingual voice assistant
   speech_to_text: ^7.4.0
   flutter_tts: ^4.2.5
+  # Imported Gemma `.task` models run on the phone; no model URL or API key.
+  flutter_gemma: 0.16.5
 
 dev_dependencies:
   flutter_test:

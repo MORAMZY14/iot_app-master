@@ -11,6 +11,8 @@ import 'package:speech_to_text/speech_to_text.dart';
 
 import '../ble_service.dart';
 import 'ellie_language.dart';
+import 'local_command_proposal_guard.dart';
+import 'local_llm_service.dart';
 import 'local_music_service.dart';
 import 'offline_assistant.dart';
 
@@ -63,14 +65,16 @@ class EllieLocalReply {
 }
 
 /// Coordinates bilingual short microphone sessions, deterministic local home
-/// control, built-in offline replies, and phone/ESP32 speech output. It never
-/// calls a cloud assistant, remote AI model, or OpenAI endpoint.
+/// control, an optional phone-local LLM, deterministic fallback replies, and
+/// phone/ESP32 speech output. It never calls a cloud assistant, remote AI
+/// model, or OpenAI endpoint.
 class EllieVoiceController {
   EllieVoiceController({
     required this.esp32BaseUri,
     this.assistantName = 'Ellie',
     this.bleService,
     this.musicService,
+    this.llmService,
     this.outputMode = EllieOutputMode.both,
     this.requireWakeWord = true,
     this.conversationWindow = const Duration(seconds: 30),
@@ -87,6 +91,7 @@ class EllieVoiceController {
   final String assistantName;
   final BleService? bleService;
   final LocalMusicService? musicService;
+  final LocalLlmService? llmService;
   final EllieOutputMode outputMode;
   final bool requireWakeWord;
   final Duration conversationWindow;
@@ -321,6 +326,23 @@ class EllieVoiceController {
       return;
     }
 
+    final looksLikeHardware = _looksLikeHardwareCommand(text);
+    final looksLikeEspQuery = _looksLikeEspDataQuery(text);
+    if (_looksLikeLocalClockRequest(text)) {
+      await _deliverConversationOrFallback(
+        text,
+        language: language,
+        allowAi: false,
+      );
+      return;
+    }
+    if (!looksLikeHardware && !looksLikeEspQuery) {
+      // Normal conversation must not wait for an HTTP timeout or BLE scan.
+      // Only a real device/sensor request is routed through the controller.
+      await _deliverConversationOrFallback(text, language: language);
+      return;
+    }
+
     EllieLocalReply? local;
     Object? localConnectionError;
     try {
@@ -339,7 +361,7 @@ class EllieVoiceController {
       return;
     }
 
-    if (_looksLikeHardwareCommand(text) && local == null) {
+    if ((looksLikeHardware || looksLikeEspQuery) && local == null) {
       await _deliverReply(
         EllieLanguageTools.pick(
           language,
@@ -358,7 +380,37 @@ class EllieVoiceController {
       return;
     }
 
-    if (_looksLikeHardwareCommand(text) && local?.needsFallback == true) {
+    if (looksLikeHardware && local?.handled != true) {
+      // A local LLM may normalize natural wording, but its output never touches
+      // a relay directly. The proposed command is sent back through the ESP32's
+      // deterministic room/device parser and must be confirmed there.
+      final ai = await _generateLocalAi(
+        text,
+        language: language,
+        allowDeviceCommand: true,
+      );
+      final proposedCommand = ai?.deviceCommand?.trim();
+      if (proposedCommand != null &&
+          proposedCommand.isNotEmpty &&
+          proposedCommand.toLowerCase() != text.toLowerCase() &&
+          LocalCommandProposalGuard.preservesUserScope(text, proposedCommand)) {
+        try {
+          final validated = await _sendLocalIntent(proposedCommand, language);
+          if (validated.handled &&
+              (validated.reply?.trim().isNotEmpty ?? false)) {
+            await _deliverReply(
+              validated.reply!.trim(),
+              language: language,
+              esp32AlreadyQueued: validated.speakerQueued,
+            );
+            return;
+          }
+        } catch (error) {
+          if (kDebugMode) {
+            debugPrint('ESP32 rejected/local link lost for AI proposal: $error');
+          }
+        }
+      }
       await _deliverReply(
         EllieLanguageTools.pick(
           language,
@@ -374,8 +426,42 @@ class EllieVoiceController {
     }
 
     final espFallback = local?.offlineReply?.trim();
-    final offlineReply = espFallback?.isNotEmpty == true
-        ? OfflineAssistantReply(text: espFallback!, language: language)
+    await _deliverConversationOrFallback(
+      text,
+      language: language,
+      preferredFallback: espFallback,
+      allowAi: false,
+    );
+  }
+
+  Future<void> _deliverConversationOrFallback(
+    String text, {
+    required EllieLanguage language,
+    String? preferredFallback,
+    bool allowAi = true,
+  }) async {
+    if (allowAi) {
+      final aiReply = await _generateLocalAi(
+        text,
+        language: language,
+        allowDeviceCommand: false,
+      );
+      if (aiReply?.reply.trim().isNotEmpty == true) {
+        await _deliverReply(
+          aiReply!.reply.trim(),
+          language: language,
+          esp32AlreadyQueued: false,
+          tryEsp32: false,
+        );
+        return;
+      }
+    }
+
+    final offlineReply = preferredFallback?.trim().isNotEmpty == true
+        ? OfflineAssistantReply(
+            text: preferredFallback!.trim(),
+            language: language,
+          )
         : OfflineAssistant.replyTo(
             text,
             assistantName: assistantName,
@@ -387,6 +473,26 @@ class EllieVoiceController {
       esp32AlreadyQueued: false,
       tryEsp32: false,
     );
+  }
+
+  Future<LocalLlmResult?> _generateLocalAi(
+    String text, {
+    required EllieLanguage language,
+    required bool allowDeviceCommand,
+  }) async {
+    final service = llmService;
+    if (service == null || !service.isReady) return null;
+    try {
+      return await service.generate(
+        text,
+        assistantName: assistantName,
+        language: language,
+        allowDeviceCommand: allowDeviceCommand,
+      );
+    } catch (error) {
+      if (kDebugMode) debugPrint('Local on-device model failed: $error');
+      return null;
+    }
   }
 
   Future<void> _handleMusicIntent(
@@ -781,12 +887,14 @@ class EllieVoiceController {
     // Treat a clear power phrase as hardware intent without requiring the name
     // to be one of a small hard-coded list of device types.
     final englishPowerPhrase = RegExp(
-      r'\b(turn|switch|power)\s+(on|off)\b|\b(turn|switch|power)\b.+\b(on|off)\b|\b(activate|deactivate)\b',
+      r'\b(turn|switch|power)\s+(on|off)\b|'
+      r'\b(turn|switch|power)\b.+\b(on|off)\b|'
+      r'\b(activate|deactivate|shut down|start up)\b',
     ).hasMatch(normalized);
     if (englishPowerPhrase) return true;
 
     final englishAction =
-        RegExp(r'\b(turn|switch|power|activate|deactivate)\b')
+        RegExp(r'\b(turn|switch|power|activate|deactivate|start|stop|shut)\b')
             .hasMatch(normalized);
     final englishTarget = RegExp(
       r'\b(light|lamp|fan|switch|socket|outlet|plug|device|room|television|tv)\b',
@@ -795,6 +903,28 @@ class EllieVoiceController {
 
     return RegExp(
       r'(شغل|شغلي|افتح|افتحي|اطف|اطفي|اقفل|اقفلي|اغلق|تشغيل|اطفاء)',
+    ).hasMatch(normalized);
+  }
+
+  bool _looksLikeEspDataQuery(String text) {
+    final normalized = text.toLowerCase();
+    final english = RegExp(
+      r'\b(temperature|humidity|flame|smoke|sensor|energy usage|power usage)\b|'
+      r'\b(is|are)\b.+\b(on|off|active|running)\b|'
+      r'\b(status|state)\b.+\b(device|room|light|lamp|fan|tv|socket|plug)\b',
+    ).hasMatch(normalized);
+    if (english) return true;
+    return RegExp(
+      r'(الحراره|الحرارة|الرطوبه|الرطوبة|الحريق|الدخان|الحساس|الطاقه|الطاقة|'
+      r'شغال|شغاله|شغالة|مفتوح|مقفول|حالة الجهاز|حاله الجهاز)',
+    ).hasMatch(normalized);
+  }
+
+  bool _looksLikeLocalClockRequest(String text) {
+    final normalized = text.toLowerCase();
+    return RegExp(
+      r'\b(what time|current time|time is it|what date|today.?s date|what day)\b|'
+      r'(الساعة كام|كم الساعة|الوقت|التاريخ|النهارده كام|اليوم كام)',
     ).hasMatch(normalized);
   }
 

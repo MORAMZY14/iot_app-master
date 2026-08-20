@@ -7,7 +7,7 @@ class AppConfig {
     'ESP32_LOCAL_IP',
     defaultValue: '',
   );
-  static const String appVersion = '2.6.0';
+  static const String appVersion = '2.7.0';
 
   // Low-latency control path timings. Local Wi-Fi/BLE should fail fast so the
   // app can fall back to Firebase without making the button feel frozen.
