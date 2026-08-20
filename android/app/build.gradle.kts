@@ -10,7 +10,9 @@ plugins {
 
 android {
     namespace = "com.example.iot_app"
-    compileSdk = flutter.compileSdkVersion
+    // Keep resource linking deterministic in CI. Android 12 splash resources
+    // require API 31+, and the current native dependencies are built for 35.
+    compileSdk = 35
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -27,7 +29,8 @@ android {
         applicationId = "com.example.iot_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // MediaPipe GenAI local inference requires Android API 24 or newer.
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -35,8 +38,8 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Test-only release build. No private production/upload key is
+            // configured or included in this source package.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
