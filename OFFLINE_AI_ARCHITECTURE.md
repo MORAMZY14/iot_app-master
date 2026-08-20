@@ -30,6 +30,8 @@ This protects the home from hallucinated targets or generated tool calls.
 - Merge the LoRA adapter, convert/quantize it with LiteRT Torch, and bundle the
   model plus tokenizer into one MediaPipe `.task` file.
 - Copy that file to the phone and use **Assistant → brain/Model → Import**.
+- The iOS picker is intentionally unfiltered so an unknown `.task` extension is
+  selectable; Flutter validates the extension before any model installation.
 - Flutter copies it into application-private support storage. It is loaded only
   on Android/iOS and remains available after a restart.
 - Reset conversation clears context. Remove deletes the app's private model
@@ -57,3 +59,8 @@ Mobile requirements for this build are Android API 24+ or iOS 16+. The `.task`
 runtime uses the CPU for compatibility with the official fine-tuned-model
 conversion path. Initial loading and replies take longer than deterministic
 commands, especially on older phones.
+
+Chrome is only an interface preview for this mobile-model configuration. The
+browser runtime cannot reopen an arbitrary local file path and requires WebGPU
+plus a web-compatible model source, so its model button shows an explanation
+instead of starting an import that cannot complete.

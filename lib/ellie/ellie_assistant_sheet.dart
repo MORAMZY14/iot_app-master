@@ -715,6 +715,28 @@ class _LocalAiManagerSheetState extends State<_LocalAiManagerSheet> {
     ));
   }
 
+  Future<void> _showUnsupportedImportInfo() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Use the phone build for this model'),
+        content: const Text(
+          'Chrome is available as a user-interface preview in this local-only '
+          'build. The supplied .task model was converted for Android/iOS CPU '
+          'inference, while a browser needs WebGPU and a separately compatible '
+          'web model source.\n\nInstall the Android APK or a signed iOS IPA, '
+          'then import smart.task on that physical phone.',
+        ),
+        actions: <Widget>[
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _retry() async {
     if (_working) return;
     setState(() => _working = true);
@@ -759,6 +781,7 @@ class _LocalAiManagerSheetState extends State<_LocalAiManagerSheet> {
     final colors = Theme.of(context).colorScheme;
     final state = widget.service.state;
     final ready = widget.service.isReady;
+    final modelImportSupported = widget.service.isSupported;
     final busy = _working ||
         state == LocalLlmState.loading ||
         state == LocalLlmState.generating;
@@ -852,8 +875,10 @@ class _LocalAiManagerSheetState extends State<_LocalAiManagerSheet> {
             ),
           ),
           const SizedBox(height: 14),
-          const Text(
-            'Train or fine-tune Gemma 3 1B on your laptop, convert it to a quantized MediaPipe `.task` file, copy it to this phone, then tap Import. The model is stored privately and runs without an API key.',
+          Text(
+            modelImportSupported
+                ? 'Train or fine-tune Gemma 3 1B on your laptop, convert it to a quantized MediaPipe `.task` file, copy it to this phone, then tap Import. On iPhone the picker shows all documents; the app accepts only a real `.task` file. The model is stored privately and runs without an API key.'
+                : 'This Chrome build previews the interface only. Import and local inference for the supplied mobile `.task` model are available in the Android and iOS builds.',
             style: TextStyle(height: 1.45),
           ),
           const SizedBox(height: 10),
@@ -863,10 +888,22 @@ class _LocalAiManagerSheetState extends State<_LocalAiManagerSheet> {
           ),
           const SizedBox(height: 18),
           FilledButton.icon(
-            onPressed: busy || !widget.service.isSupported ? null : _importModel,
-            icon: const Icon(Icons.file_open_rounded),
+            onPressed: busy
+                ? null
+                : modelImportSupported
+                    ? _importModel
+                    : _showUnsupportedImportInfo,
+            icon: Icon(
+              modelImportSupported
+                  ? Icons.file_open_rounded
+                  : Icons.info_outline_rounded,
+            ),
             label: Text(
-              ready ? 'Replace `.task` model' : 'Import `.task` model',
+              modelImportSupported
+                  ? ready
+                      ? 'Replace `.task` model'
+                      : 'Import `.task` model'
+                  : 'Why import is unavailable in Chrome',
             ),
           ),
           if (state == LocalLlmState.error) ...<Widget>[

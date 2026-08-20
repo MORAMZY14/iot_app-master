@@ -186,15 +186,30 @@ class LocalLlmService extends ChangeNotifier {
 
   Future<bool> importModel() async {
     if (!isSupported || _state == LocalLlmState.loading) return false;
+
+    // iOS does not always map an app-specific extension such as `.task` to a
+    // selectable UTType. Asking its document picker to filter by that custom
+    // extension can therefore show the correct file but grey it out. Let iOS
+    // display every document, then validate `.task` below before copying it.
+    // Android's extension filter is reliable and remains useful there.
+    final useUnfilteredIosPicker =
+        defaultTargetPlatform == TargetPlatform.iOS;
     final selected = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['task'],
+      type: useUnfilteredIosPicker ? FileType.any : FileType.custom,
+      allowedExtensions:
+          useUnfilteredIosPicker ? null : const <String>['task'],
       allowMultiple: false,
+      withData: false,
       withReadStream: true,
     );
     if (selected == null || selected.files.isEmpty) return false;
 
     final file = selected.files.single;
+    if (!file.name.toLowerCase().endsWith('.task')) {
+      _lastError = 'Choose the reconstructed model file ending in .task.';
+      _setState(LocalLlmState.error);
+      return false;
+    }
     _lastError = null;
     _setState(LocalLlmState.loading);
     String? newStoredPath;

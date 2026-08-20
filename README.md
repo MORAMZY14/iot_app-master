@@ -154,7 +154,11 @@ Firebase or sent to a remote assistant.
 - Open conversation needs a successfully imported mobile `.task` model. The
   source package intentionally contains no model weights.
 - The model runs on Android/iOS only in this prototype; web keeps deterministic
-  fallback behavior.
+  fallback behavior. Chrome is a UI preview and its model button explains why
+  the mobile file cannot be imported there.
+- On iOS the document picker intentionally shows every file because Apple may
+  not register `.task` as a selectable document type. The app itself rejects
+  anything that does not end in `.task` before copying it.
 - Arabic replies are spoken by the installed phone voice. ESP32 Arabic output
   requires known audio clips stored locally in its flash.
 - A basic ESP32 receives recognized text from Flutter. Direct microphone-based

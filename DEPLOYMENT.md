@@ -33,6 +33,13 @@ Copy the resulting `.task` file to the phone, open the center assistant button,
 then use **brain/Model → Import `.task` model**. No model is downloaded by the
 app and no Hugging Face/OpenAI credential is compiled into it.
 
+On iPhone, the picker deliberately shows all document types because iOS can
+grey out files with the unregistered `.task` extension when a custom filter is
+used. Select `smart.task`; the app validates the extension itself and streams
+the approximately 1 GB copy rather than loading it all into memory. Keep the
+app open while the progress indicator is visible and allow several GB of free
+storage for the original file, the app-private copy, and runtime working space.
+
 In the assistant, tap the music-library icon, choose **Add songs**, and select
 local audio files from Files. The app copies them into its private sandbox so
 commands such as `play Blinding Lights`, `pause music`, and `next song` keep
@@ -177,7 +184,9 @@ firebase deploy --only hosting --project "iot-smart-home-81abd"
 
 Typed deterministic assistant commands can be tested in a compatible browser.
 The imported mobile `.task` model is intentionally Android/iOS-only in this
-prototype. Offline browser speech recognition varies by browser, and an HTTPS
+prototype. The browser model button is clickable only to show this platform
+explanation; use a physical Android/iPhone for importing `smart.task`. Offline
+browser speech recognition varies by browser, and an HTTPS
 page normally cannot call an ESP32's plain HTTP address because of mixed-content
 and CORS rules.
 

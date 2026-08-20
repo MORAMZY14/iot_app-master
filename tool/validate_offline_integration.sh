@@ -7,6 +7,12 @@ voice="$project_root/lib/ellie/ellie_voice_controller.dart"
 ble="$project_root/lib/ble_service.dart"
 dashboard="$project_root/lib/dashboard_page.dart"
 llm="$project_root/lib/ellie/local_llm_service.dart"
+podfile="$project_root/ios/Podfile"
+ios_project="$project_root/ios/Runner.xcodeproj/project.pbxproj"
+ios_framework_info="$project_root/ios/Flutter/AppFrameworkInfo.plist"
+ios_entitlements="$project_root/ios/Runner/Runner.entitlements"
+android_build="$project_root/android/app/build.gradle.kts"
+android_v31_styles="$project_root/android/app/src/main/res/values-v31/styles.xml"
 
 require_pattern() {
   local pattern="$1"
@@ -28,7 +34,7 @@ require_pattern "resolve\('/api/assistant/name'\)" "$voice"
 require_pattern "'cmd': 'ellie'" "$ble"
 require_pattern "'cmd': 'set_assistant_name'" "$ble"
 require_pattern '_resolveAssistantEsp32Ip' "$dashboard"
-require_pattern 'version: 2\.7\.0\+42' "$project_root/pubspec.yaml"
+require_pattern '^version: [0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$' "$project_root/pubspec.yaml"
 require_pattern '_ensureBleConnected' "$voice"
 require_pattern '_configurePhoneAudioSession' "$voice"
 require_pattern 'englishPowerPhrase' "$voice"
@@ -52,11 +58,23 @@ require_pattern 'AVSpeechSynthesizer' "$project_root/ios/Runner/AppDelegate.swif
 require_pattern 'flutter_gemma: 0\.16\.5' "$project_root/pubspec.yaml"
 require_pattern 'FlutterGemma\.installModel' "$llm"
 require_pattern '\.fromFile\(path\)' "$llm"
+require_pattern 'useUnfilteredIosPicker' "$llm"
+require_pattern 'FileType\.any' "$llm"
+require_pattern 'withData: false' "$llm"
+require_pattern 'Why import is unavailable in Chrome' "$project_root/lib/ellie/ellie_assistant_sheet.dart"
 require_pattern 'allowDeviceCommand' "$llm"
 require_pattern 'LocalCommandProposalGuard\.preservesUserScope' "$voice"
 require_pattern 'llmService: _llmService' "$project_root/lib/ellie/ellie_assistant_sheet.dart"
 require_pattern 'minSdk = 24' "$project_root/android/app/build.gradle.kts"
 require_pattern "platform :ios, '16\.0'" "$project_root/ios/Podfile"
+require_pattern "IPHONEOS_DEPLOYMENT_TARGET.*16\.0" "$podfile"
+require_pattern 'IPHONEOS_DEPLOYMENT_TARGET = 16\.0' "$ios_project"
+require_pattern '<string>16\.0</string>' "$ios_framework_info"
+require_pattern 'CODE_SIGN_ENTITLEMENTS = Runner/Runner\.entitlements' "$ios_project"
+require_pattern 'com\.apple\.developer\.kernel\.extended-virtual-addressing' "$ios_entitlements"
+require_pattern 'com\.apple\.developer\.kernel\.increased-memory-limit' "$ios_entitlements"
+require_pattern 'enable-swift-package-manager: false' "$project_root/pubspec.yaml"
+require_pattern 'compileSdk = 35' "$android_build"
 require_pattern 'build_model_1b' "$project_root/training/convert_to_tflite.py"
 require_pattern 'bundler\.create_bundle' "$project_root/training/bundle_task.py"
 if rg -q -- 'onEllie' "$dashboard"; then
@@ -66,6 +84,11 @@ fi
 
 if rg -q -- 'httpPatchSucceeded' "$firmware"; then
   echo "A synchronous command-triggered Firebase state PATCH remains" >&2
+  exit 1
+fi
+
+if rg -q -- 'android:postSplashScreenTheme' "$android_v31_styles"; then
+  echo "AndroidX postSplashScreenTheme incorrectly uses the android namespace" >&2
   exit 1
 fi
 
