@@ -1,10 +1,7 @@
 import 'ellie_language.dart';
 
 class OfflineAssistantReply {
-  const OfflineAssistantReply({
-    required this.text,
-    required this.language,
-  });
+  const OfflineAssistantReply({required this.text, required this.language});
 
   final String text;
   final EllieLanguage language;
@@ -39,7 +36,8 @@ class OfflineAssistant {
     ])) {
       return _reply(
         language,
-        english: 'Hello. I’m $assistantName, running locally on your home system.',
+        english:
+            'Hello. I’m $assistantName, running locally on your home system.',
         arabic: 'أهلاً. أنا $assistantName، وأعمل محلياً داخل نظام المنزل.',
       );
     }
@@ -54,7 +52,8 @@ class OfflineAssistant {
     ])) {
       return _reply(
         language,
-        english: 'My name is $assistantName. I work without OpenAI or a cloud assistant.',
+        english:
+            'My name is $assistantName. I work without OpenAI or a cloud assistant.',
         arabic: 'اسمي $assistantName. أعمل بدون أوبن أي آي أو مساعد سحابي.',
       );
     }
@@ -73,7 +72,8 @@ class OfflineAssistant {
       return _reply(
         language,
         english: 'It is $hour:$minute $suffix.',
-        arabic: 'الساعة الآن $hour:$minute ${current.hour < 12 ? 'صباحاً' : 'مساءً'}.',
+        arabic:
+            'الساعة الآن $hour:$minute ${current.hour < 12 ? 'صباحاً' : 'مساءً'}.',
       );
     }
 
@@ -86,8 +86,18 @@ class OfflineAssistant {
       'اليوم كام',
     ])) {
       const englishMonths = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December',
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December',
       ];
       return _reply(
         language,
@@ -97,17 +107,8 @@ class OfflineAssistant {
       );
     }
 
-    if (_containsAny(normalized, const [
-      'thank',
-      'thanks',
-      'شكرا',
-      'متشكر',
-    ])) {
-      return _reply(
-        language,
-        english: 'You’re welcome.',
-        arabic: 'العفو.',
-      );
+    if (_containsAny(normalized, const ['thank', 'thanks', 'شكرا', 'متشكر'])) {
+      return _reply(language, english: 'You’re welcome.', arabic: 'العفو.');
     }
 
     if (_containsAny(normalized, const [
@@ -162,11 +163,8 @@ class OfflineAssistant {
     required String arabic,
   }) =>
       OfflineAssistantReply(
-        text: EllieLanguageTools.pick(
-          language,
-          english: english,
-          arabic: arabic,
-        ),
+        text:
+            EllieLanguageTools.pick(language, english: english, arabic: arabic),
         language: language,
       );
 

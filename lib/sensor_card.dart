@@ -23,7 +23,9 @@ class SensorCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: theme.brightness == Brightness.dark ? 0.18 : 0.08),
+          color: Colors.black.withValues(
+            alpha: theme.brightness == Brightness.dark ? 0.18 : 0.08,
+          ),
           spreadRadius: 1,
           blurRadius: 8,
           offset: const Offset(0, 2),

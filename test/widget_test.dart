@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:iot/ellie/offline_voice_selection.dart';
 import 'package:iot/assistant_identity.dart';
 import 'package:iot/ellie/ellie_language.dart';
 import 'package:iot/ellie/local_command_proposal_guard.dart';
@@ -7,6 +8,22 @@ import 'package:iot/ellie/local_music_service.dart';
 import 'package:iot/ellie/offline_assistant.dart';
 
 void main() {
+  test('Android offline voices accept numeric flags and reject network voices',
+      () {
+    final voices = [
+      {'name': 'network', 'locale': 'ar-EG', 'network_required': '1'},
+      {'name': 'local', 'locale': 'ar-EG', 'network_required': '0'},
+      {'name': 'english', 'locale': 'en-US', 'network_required': false},
+    ];
+    expect(selectOfflineVoice(voices, 'ar-EG')?['name'], 'local');
+    expect(selectOfflineVoice(voices, 'en_US')?['name'], 'english');
+    expect(selectOfflineVoice(voices, 'fr-FR'), isNull);
+    expect(
+        selectOfflineVoice([
+          {'name': 'unknown', 'locale': 'ar-EG'}
+        ], 'ar-EG'),
+        isNull);
+  });
   test('assistant names are compacted and validated', () {
     expect(compactAssistantName('  Nova   Home  '), 'Nova Home');
     expect(validateAssistantName('Nova'), isNull);

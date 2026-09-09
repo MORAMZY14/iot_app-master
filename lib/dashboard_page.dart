@@ -1,6 +1,7 @@
+import 'ui/home_scenes.dart';
+import 'ui/smart_home_design.dart';
 import 'dart:convert';
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,7 @@ import 'assistant_identity.dart';
 import 'assistant_name_store.dart';
 import 'ellie/ellie_assistant_sheet.dart';
 import 'room_image_store.dart';
+import 'widgets/room_photo_card.dart';
 
 // ────────────────────────────────────────────────────────────
 // 0. THEME MANAGEMENT
@@ -65,7 +67,8 @@ class AppNotificationItem {
   );
 }
 
-class AppNotificationsController extends StateNotifier<List<AppNotificationItem>> {
+class AppNotificationsController
+    extends StateNotifier<List<AppNotificationItem>> {
   AppNotificationsController() : super(const []);
 
   void push({
@@ -78,7 +81,7 @@ class AppNotificationsController extends StateNotifier<List<AppNotificationItem>
   }) {
     final now = DateTime.now();
     final recentDuplicate = state.any(
-          (item) => item.key == key && now.difference(item.createdAt) < suppressFor,
+      (item) => item.key == key && now.difference(item.createdAt) < suppressFor,
     );
     if (recentDuplicate) return;
 
@@ -105,9 +108,10 @@ class AppNotificationsController extends StateNotifier<List<AppNotificationItem>
 }
 
 final appNotificationsProvider =
-StateNotifierProvider<AppNotificationsController, List<AppNotificationItem>>(
-      (ref) => AppNotificationsController(),
-);
+    StateNotifierProvider<
+      AppNotificationsController,
+      List<AppNotificationItem>
+    >((ref) => AppNotificationsController());
 
 String _timeAgo(DateTime date) {
   final diff = DateTime.now().difference(date);
@@ -117,38 +121,17 @@ String _timeAgo(DateTime date) {
   return '${diff.inDays} d ago';
 }
 
-final lightTheme = ThemeData(
-  useMaterial3: true,
-  brightness: Brightness.light,
-  colorSchemeSeed: const Color(0xFF6C63FF),
-  scaffoldBackgroundColor: const Color(0xFFF0F2FF),
-  appBarTheme: const AppBarTheme(
-    backgroundColor: Colors.transparent,
-    elevation: 0,
-    scrolledUnderElevation: 0,
-  ),
-);
-
-final darkTheme = ThemeData(
-  useMaterial3: true,
-  brightness: Brightness.dark,
-  colorSchemeSeed: const Color(0xFF6C63FF),
-  scaffoldBackgroundColor: const Color(0xFF0B0D1A),
-  appBarTheme: const AppBarTheme(
-    backgroundColor: Colors.transparent,
-    elevation: 0,
-    scrolledUnderElevation: 0,
-  ),
-);
+final lightTheme = HomeDesign.theme(Brightness.light);
+final darkTheme = HomeDesign.theme(Brightness.dark);
 
 // ────────────────────────────────────────────────────────────
 // 1. DESIGN TOKENS
 // ────────────────────────────────────────────────────────────
 class _DT {
-  static const purple = Color(0xFF6C63FF);
+  static const purple = HomeDesign.blue;
   static const green = Color(0xFF4DFFA0);
   static const amber = Color(0xFFFFB347);
-  static const blue = Color(0xFF64B5F6);
+  static const blue = HomeDesign.cyan;
   static const red = Color(0xFFFF5252);
   static const espConnected = Color(0xFF4DFFA0);
 }
@@ -162,7 +145,7 @@ class ResponsiveHelper {
 
   static bool isTablet(BuildContext context) =>
       MediaQuery.of(context).size.width >= 600 &&
-          MediaQuery.of(context).size.width < 1200;
+      MediaQuery.of(context).size.width < 1200;
 
   static bool isDesktop(BuildContext context) =>
       MediaQuery.of(context).size.width >= 1200;
@@ -244,10 +227,12 @@ class ESP32DeviceService {
 
   Future<Map<String, dynamic>?> _tryGetDevicesFromLocalHttp() async {
     try {
-      final response = await http.get(
-        Uri.parse('http://$esp32Ip/api/devices'),
-        headers: const {'Cache-Control': 'no-cache'},
-      ).timeout(AppConfig.shortTimeout);
+      final response = await http
+          .get(
+            Uri.parse('http://$esp32Ip/api/devices'),
+            headers: const {'Cache-Control': 'no-cache'},
+          )
+          .timeout(AppConfig.shortTimeout);
 
       if (response.statusCode != 200 || response.body.isEmpty) return null;
       final data = jsonDecode(response.body);
@@ -282,10 +267,12 @@ class ESP32DeviceService {
       final user = FirebaseAuth.instance.currentUser;
 
       if (user != null) {
-        final response = await http.get(
-          Uri.parse('$databaseUrl/smartHome/${user.uid}/devices.json'),
-          headers: {'Cache-Control': 'no-cache'},
-        ).timeout(AppConfig.mediumTimeout);
+        final response = await http
+            .get(
+              Uri.parse('$databaseUrl/smartHome/${user.uid}/devices.json'),
+              headers: {'Cache-Control': 'no-cache'},
+            )
+            .timeout(AppConfig.mediumTimeout);
 
         if (response.statusCode == 200 &&
             response.body.isNotEmpty &&
@@ -326,10 +313,7 @@ class ESP32DeviceService {
       final device = raw.cast<String, dynamic>();
       final id = (device['id'] ?? '').toString();
       if (id.isEmpty) continue;
-      merged[id] = {
-        ...?merged[id],
-        ...device,
-      };
+      merged[id] = {...?merged[id], ...device};
     }
 
     return {'devices': merged.values.toList()};
@@ -351,15 +335,19 @@ class ESP32DeviceService {
           result.add(item);
         });
       }
-      result.sort((a, b) => a['name'].toString().compareTo(b['name'].toString()));
+      result.sort(
+        (a, b) => a['name'].toString().compareTo(b['name'].toString()),
+      );
       return result.where((m) => m['enabled'] != false).toList();
     }
 
     try {
-      final response = await http.get(
-        Uri.parse('http://$esp32Ip/api/io/modules'),
-        headers: const {'Cache-Control': 'no-cache'},
-      ).timeout(AppConfig.shortTimeout);
+      final response = await http
+          .get(
+            Uri.parse('http://$esp32Ip/api/io/modules'),
+            headers: const {'Cache-Control': 'no-cache'},
+          )
+          .timeout(AppConfig.shortTimeout);
       if (response.statusCode == 200 && response.body.isNotEmpty) {
         final decoded = jsonDecode(response.body);
         if (decoded is Map) {
@@ -374,10 +362,14 @@ class ESP32DeviceService {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid != null) {
-        final response = await http.get(
-          Uri.parse('${AppConfig.databaseUrl}/smartHome/$uid/hardware/ioModules.json'),
-          headers: const {'Cache-Control': 'no-cache'},
-        ).timeout(AppConfig.mediumTimeout);
+        final response = await http
+            .get(
+              Uri.parse(
+                '${AppConfig.databaseUrl}/smartHome/$uid/hardware/ioModules.json',
+              ),
+              headers: const {'Cache-Control': 'no-cache'},
+            )
+            .timeout(AppConfig.mediumTimeout);
         if (response.statusCode == 200 && response.body != 'null') {
           final modules = parseModules(jsonDecode(response.body));
           if (modules.isNotEmpty) return modules;
@@ -429,11 +421,15 @@ class ESP32DeviceService {
       };
 
       // Save to Firebase first so cloud state remains the source of truth.
-      final response = await http.put(
-        Uri.parse('${AppConfig.databaseUrl}/smartHome/$uid/devices/$id.json'),
-        headers: const {'Content-Type': 'application/json'},
-        body: jsonEncode(deviceData),
-      ).timeout(AppConfig.mediumTimeout);
+      final response = await http
+          .put(
+            Uri.parse(
+              '${AppConfig.databaseUrl}/smartHome/$uid/devices/$id.json',
+            ),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode(deviceData),
+          )
+          .timeout(AppConfig.mediumTimeout);
 
       if (response.statusCode != 200) return false;
 
@@ -442,18 +438,21 @@ class ESP32DeviceService {
       // PCF8574 output sometimes did not exist locally until an ESP32 restart.
       bool appliedLocally = false;
       try {
-        final localResponse = await http.post(
-          Uri.parse('http://$esp32Ip/api/devices/add'),
-          body: {
-            'id': id,
-            'name': name,
-            'type': '$type',
-            'moduleId': moduleId,
-            'channel': '$channel',
-            'room': room,
-          },
-        ).timeout(AppConfig.mediumTimeout);
-        appliedLocally = localResponse.statusCode >= 200 && localResponse.statusCode < 300;
+        final localResponse = await http
+            .post(
+              Uri.parse('http://$esp32Ip/api/devices/add'),
+              body: {
+                'id': id,
+                'name': name,
+                'type': '$type',
+                'moduleId': moduleId,
+                'channel': '$channel',
+                'room': room,
+              },
+            )
+            .timeout(AppConfig.mediumTimeout);
+        appliedLocally =
+            localResponse.statusCode >= 200 && localResponse.statusCode < 300;
       } catch (e) {
         logDebug('Direct ESP32 device add unavailable: $e');
       }
@@ -462,11 +461,14 @@ class ESP32DeviceService {
       // the new ID-aware add endpoint.
       if (!appliedLocally) {
         try {
-          final syncResponse = await http.get(
-            Uri.parse('http://$esp32Ip/api/sync'),
-            headers: const {'Cache-Control': 'no-cache'},
-          ).timeout(AppConfig.mediumTimeout);
-          appliedLocally = syncResponse.statusCode >= 200 && syncResponse.statusCode < 300;
+          final syncResponse = await http
+              .get(
+                Uri.parse('http://$esp32Ip/api/sync'),
+                headers: const {'Cache-Control': 'no-cache'},
+              )
+              .timeout(AppConfig.mediumTimeout);
+          appliedLocally =
+              syncResponse.statusCode >= 200 && syncResponse.statusCode < 300;
         } catch (e) {
           logDebug('Local ESP32 sync unavailable: $e');
         }
@@ -513,25 +515,33 @@ class ESP32DeviceService {
         'expanderId': moduleId,
         'channel': newChannel,
       };
-      final response = await http.patch(
-        Uri.parse('${AppConfig.databaseUrl}/smartHome/$uid/devices/$id.json'),
-        headers: const {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      ).timeout(AppConfig.mediumTimeout);
+      final response = await http
+          .patch(
+            Uri.parse(
+              '${AppConfig.databaseUrl}/smartHome/$uid/devices/$id.json',
+            ),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(AppConfig.mediumTimeout);
 
       if (response.statusCode == 200) {
         try {
-          await http.post(
-            Uri.parse('http://$esp32Ip/api/devices/output'),
-            body: {
-              'id': id,
-              'moduleId': moduleId,
-              'channel': '$newChannel',
-            },
-          ).timeout(AppConfig.shortTimeout);
+          await http
+              .post(
+                Uri.parse('http://$esp32Ip/api/devices/output'),
+                body: {
+                  'id': id,
+                  'moduleId': moduleId,
+                  'channel': '$newChannel',
+                },
+              )
+              .timeout(AppConfig.shortTimeout);
         } catch (_) {
           if (bleService.isConnected) {
-            await bleService.editOutput(id, moduleId, newChannel).catchError((_) => false);
+            await bleService
+                .editOutput(id, moduleId, newChannel)
+                .catchError((_) => false);
           }
         }
       }
@@ -545,13 +555,9 @@ class ESP32DeviceService {
   // Use exactly one command path. Racing local HTTP and BLE sent duplicate
   // commands and let one path keep a stale cache, which made the UI bounce and
   // could replay old cloud state. Prefer local Wi-Fi, then BLE, then Firebase.
-  Future<bool> controlDevice({
-    required String id,
-    required bool state,
-  }) async {
+  Future<bool> controlDevice({required String id, required bool state}) async {
     if (await _tryLocalControl(id: id, state: state)) return true;
-    if (bleService.isConnected &&
-        await _tryBleControl(id: id, state: state)) {
+    if (bleService.isConnected && await _tryBleControl(id: id, state: state)) {
       return true;
     }
     return _controlDeviceViaFirebase(id: id, state: state);
@@ -569,48 +575,22 @@ class ESP32DeviceService {
     }
   }
 
-  Future<bool> _tryLocalControl({required String id, required bool state}) async {
+  Future<bool> _tryLocalControl({
+    required String id,
+    required bool state,
+  }) async {
     try {
-      final localResponse = await http.post(
-        Uri.parse('http://$esp32Ip/api/devices/control'),
-        headers: const {'Cache-Control': 'no-cache'},
-        body: {'id': id, 'state': state ? 'true' : 'false'},
-      ).timeout(AppConfig.localControlTimeout);
+      final localResponse = await http
+          .post(
+            Uri.parse('http://$esp32Ip/api/devices/control'),
+            headers: const {'Cache-Control': 'no-cache'},
+            body: {'id': id, 'state': state ? 'true' : 'false'},
+          )
+          .timeout(AppConfig.localControlTimeout);
       return localResponse.statusCode == 200;
     } catch (_) {
       return false;
     }
-  }
-
-  Future<bool> _firstSuccessful(
-    List<Future<bool>> attempts, {
-    required Duration timeout,
-  }) async {
-    if (attempts.isEmpty) return false;
-
-    final completer = Completer<bool>();
-    var remaining = attempts.length;
-
-    for (final attempt in attempts) {
-      unawaited(attempt.then((ok) {
-        if (ok && !completer.isCompleted) {
-          completer.complete(true);
-          return;
-        }
-        remaining--;
-        if (remaining <= 0 && !completer.isCompleted) {
-          completer.complete(false);
-        }
-      }).catchError((_) {
-        remaining--;
-        if (remaining <= 0 && !completer.isCompleted) {
-          completer.complete(false);
-        }
-        return false;
-      }));
-    }
-
-    return completer.future.timeout(timeout, onTimeout: () => false);
   }
 
   Future<bool> _controlDeviceViaFirebase({
@@ -621,11 +601,13 @@ class ESP32DeviceService {
       final String databaseUrl = AppConfig.databaseUrl;
       final String uid = FirebaseAuth.instance.currentUser!.uid;
 
-      final response = await http.patch(
-        Uri.parse('$databaseUrl/smartHome/$uid/devices/$id.json'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'state': state}),
-      ).timeout(AppConfig.firebaseControlTimeout);
+      final response = await http
+          .patch(
+            Uri.parse('$databaseUrl/smartHome/$uid/devices/$id.json'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'state': state}),
+          )
+          .timeout(AppConfig.firebaseControlTimeout);
 
       return response.statusCode == 200;
     } catch (e) {
@@ -640,9 +622,9 @@ class ESP32DeviceService {
       final String databaseUrl = AppConfig.databaseUrl;
       final String uid = FirebaseAuth.instance.currentUser!.uid;
 
-      final response = await http.delete(
-        Uri.parse('$databaseUrl/smartHome/$uid/devices/$id.json'),
-      ).timeout(AppConfig.shortTimeout);
+      final response = await http
+          .delete(Uri.parse('$databaseUrl/smartHome/$uid/devices/$id.json'))
+          .timeout(AppConfig.shortTimeout);
 
       return response.statusCode == 200;
     } catch (e) {
@@ -657,11 +639,13 @@ class ESP32DeviceService {
       final String databaseUrl = AppConfig.databaseUrl;
       final String uid = FirebaseAuth.instance.currentUser!.uid;
 
-      final response = await http.put(
-        Uri.parse('$databaseUrl/smartHome/$uid/rooms.json'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(rooms),
-      ).timeout(AppConfig.mediumTimeout);
+      final response = await http
+          .put(
+            Uri.parse('$databaseUrl/smartHome/$uid/rooms.json'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(rooms),
+          )
+          .timeout(AppConfig.mediumTimeout);
 
       return response.statusCode == 200;
     } catch (e) {
@@ -669,8 +653,6 @@ class ESP32DeviceService {
       return false;
     }
   }
-
-
 
   Future<bool> renameRoomInDevices({
     required String oldRoom,
@@ -685,13 +667,17 @@ class ESP32DeviceService {
       bool ok = true;
 
       for (final device in devices) {
-        if (device is Map && device['room'] == oldRoom && device['id'] != null) {
+        if (device is Map &&
+            device['room'] == oldRoom &&
+            device['id'] != null) {
           final id = device['id'].toString();
-          final response = await http.patch(
-            Uri.parse('$databaseUrl/smartHome/$uid/devices/$id.json'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'room': newRoom}),
-          ).timeout(AppConfig.mediumTimeout);
+          final response = await http
+              .patch(
+                Uri.parse('$databaseUrl/smartHome/$uid/devices/$id.json'),
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode({'room': newRoom}),
+              )
+              .timeout(AppConfig.mediumTimeout);
           ok = ok && response.statusCode == 200;
         }
       }
@@ -702,13 +688,15 @@ class ESP32DeviceService {
       return false;
     }
   }
+
   List<String> _roomsFromDeviceList(List<Map<String, dynamic>> devices) {
     final rooms = <String>{};
     for (final device in devices) {
       final room = device['room']?.toString().trim() ?? '';
       if (room.isNotEmpty) rooms.add(room);
     }
-    return rooms.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return rooms.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   }
 
   // Get rooms from Firebase. Important: do NOT invent default rooms.
@@ -741,15 +729,18 @@ class ESP32DeviceService {
         }
       }
 
-      final sorted = rooms.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      final sorted = rooms.toList()
+        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       return sorted;
     }
 
     try {
-      final localResponse = await http.get(
-        Uri.parse('http://$esp32Ip/api/rooms'),
-        headers: const {'Cache-Control': 'no-cache'},
-      ).timeout(AppConfig.shortTimeout);
+      final localResponse = await http
+          .get(
+            Uri.parse('http://$esp32Ip/api/rooms'),
+            headers: const {'Cache-Control': 'no-cache'},
+          )
+          .timeout(AppConfig.shortTimeout);
       if (localResponse.statusCode == 200 && localResponse.body.isNotEmpty) {
         final rooms = normalizeRooms(jsonDecode(localResponse.body)['rooms']);
         if (rooms.isNotEmpty) return rooms;
@@ -762,24 +753,32 @@ class ESP32DeviceService {
       final String databaseUrl = AppConfig.databaseUrl;
       final String uid = FirebaseAuth.instance.currentUser!.uid;
 
-      final response = await http.get(
-        Uri.parse('$databaseUrl/smartHome/$uid/rooms.json'),
-        headers: {'Cache-Control': 'no-cache'},
-      ).timeout(AppConfig.shortTimeout);
+      final response = await http
+          .get(
+            Uri.parse('$databaseUrl/smartHome/$uid/rooms.json'),
+            headers: {'Cache-Control': 'no-cache'},
+          )
+          .timeout(AppConfig.shortTimeout);
 
-      if (response.statusCode == 200 && response.body.isNotEmpty && response.body != 'null') {
+      if (response.statusCode == 200 &&
+          response.body.isNotEmpty &&
+          response.body != 'null') {
         final rooms = normalizeRooms(jsonDecode(response.body));
         if (rooms.isNotEmpty) return rooms;
       }
 
       // Migration fallback only: if old devices already have room names but no
       // /rooms node exists yet, show those rooms. Do not create fake defaults.
-      final devicesResponse = await http.get(
-        Uri.parse('$databaseUrl/smartHome/$uid/devices.json'),
-        headers: {'Cache-Control': 'no-cache'},
-      ).timeout(AppConfig.shortTimeout);
+      final devicesResponse = await http
+          .get(
+            Uri.parse('$databaseUrl/smartHome/$uid/devices.json'),
+            headers: {'Cache-Control': 'no-cache'},
+          )
+          .timeout(AppConfig.shortTimeout);
 
-      if (devicesResponse.statusCode == 200 && devicesResponse.body.isNotEmpty && devicesResponse.body != 'null') {
+      if (devicesResponse.statusCode == 200 &&
+          devicesResponse.body.isNotEmpty &&
+          devicesResponse.body != 'null') {
         final dynamic data = jsonDecode(devicesResponse.body);
         final Set<String> rooms = {};
         if (data is Map) {
@@ -790,7 +789,8 @@ class ESP32DeviceService {
             }
           });
         }
-        final roomsList = rooms.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+        final roomsList = rooms.toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
         if (roomsList.isNotEmpty) {
           await saveRooms(roomsList);
           return roomsList;
@@ -815,10 +815,13 @@ class ESP32DeviceService {
       if (device is! Map) continue;
       final id = device['id']?.toString();
       if (excludingDeviceId != null && id == excludingDeviceId) continue;
-      final deviceModule = (device['moduleId'] ?? device['expanderId'] ?? 'io_1').toString();
+      final deviceModule =
+          (device['moduleId'] ?? device['expanderId'] ?? 'io_1').toString();
       if (deviceModule != moduleId) continue;
       final raw = device['channel'];
-      final channel = raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '');
+      final channel = raw is num
+          ? raw.toInt()
+          : int.tryParse(raw?.toString() ?? '');
       if (channel != null) used.add(channel);
     }
     return used;
@@ -835,33 +838,46 @@ class ESP32DeviceService {
       scanned = await getAvailableChannels(moduleId);
     } catch (_) {}
     try {
-      used = await getUsedChannels(moduleId: moduleId, excludingDeviceId: excludingDeviceId);
+      used = await getUsedChannels(
+        moduleId: moduleId,
+        excludingDeviceId: excludingDeviceId,
+      );
     } catch (_) {
       used = <int>{};
       for (final device in bleService.devices) {
         final id = device['id']?.toString();
         if (excludingDeviceId != null && id == excludingDeviceId) continue;
-        final deviceModule = (device['moduleId'] ?? device['expanderId'] ?? 'io_1').toString();
+        final deviceModule =
+            (device['moduleId'] ?? device['expanderId'] ?? 'io_1').toString();
         if (deviceModule != moduleId) continue;
         final raw = device['channel'];
-        final channel = raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '');
+        final channel = raw is num
+            ? raw.toInt()
+            : int.tryParse(raw?.toString() ?? '');
         if (channel != null) used.add(channel);
       }
     }
 
     final all = <int>{...List<int>.generate(8, (i) => i), ...scanned};
-    if (currentChannel != null && currentChannel >= 0 && currentChannel < 8) all.add(currentChannel);
+    if (currentChannel != null && currentChannel >= 0 && currentChannel < 8)
+      all.add(currentChannel);
     return all
-        .where((channel) => !used.contains(channel) || channel == currentChannel)
+        .where(
+          (channel) => !used.contains(channel) || channel == currentChannel,
+        )
         .toList()
       ..sort();
   }
 
   Future<List<int>> getAvailableChannels(String moduleId) async {
     try {
-      final response = await http.get(
-        Uri.parse('http://$esp32Ip/api/channels?moduleId=${Uri.encodeQueryComponent(moduleId)}'),
-      ).timeout(AppConfig.shortTimeout);
+      final response = await http
+          .get(
+            Uri.parse(
+              'http://$esp32Ip/api/channels?moduleId=${Uri.encodeQueryComponent(moduleId)}',
+            ),
+          )
+          .timeout(AppConfig.shortTimeout);
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final available = data['available'] as List? ?? [];
@@ -878,13 +894,15 @@ class ESP32DeviceService {
 
   Future<List<Map<String, dynamic>>> getDeviceTypes() async {
     try {
-      final response = await http.get(
-        Uri.parse('http://$esp32Ip/api/devicetypes'),
-      ).timeout(AppConfig.shortTimeout);
+      final response = await http
+          .get(Uri.parse('http://$esp32Ip/api/devicetypes'))
+          .timeout(AppConfig.shortTimeout);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return (data['types'] as List? ?? []).map((e) => e as Map<String, dynamic>).toList();
+        return (data['types'] as List? ?? [])
+            .map((e) => e as Map<String, dynamic>)
+            .toList();
       }
       return [
         {'type': 0, 'name': 'Light', 'icon': 'lightbulb'},
@@ -913,10 +931,12 @@ final userEsp32CodeProvider = FutureProvider<String?>((ref) async {
 
     if (user != null) {
       final String databaseUrl = AppConfig.databaseUrl;
-      final response = await http.get(
-        Uri.parse('$databaseUrl/users/${user.uid}/esp32Code.json'),
-        headers: {'Cache-Control': 'no-cache'},
-      ).timeout(AppConfig.shortTimeout);
+      final response = await http
+          .get(
+            Uri.parse('$databaseUrl/users/${user.uid}/esp32Code.json'),
+            headers: {'Cache-Control': 'no-cache'},
+          )
+          .timeout(AppConfig.shortTimeout);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -960,10 +980,12 @@ final esp32IpProvider = FutureProvider<String>((ref) async {
   final String databaseUrl = AppConfig.databaseUrl;
 
   try {
-    final response = await http.get(
-      Uri.parse('$databaseUrl/esp_public/$code/status.json'),
-      headers: {'Cache-Control': 'no-cache'},
-    ).timeout(AppConfig.mediumTimeout);
+    final response = await http
+        .get(
+          Uri.parse('$databaseUrl/esp_public/$code/status.json'),
+          headers: {'Cache-Control': 'no-cache'},
+        )
+        .timeout(AppConfig.mediumTimeout);
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
@@ -976,10 +998,12 @@ final esp32IpProvider = FutureProvider<String>((ref) async {
   }
 
   try {
-    final response = await http.get(
-      Uri.parse('$databaseUrl/smartHome/${user.uid}/status.json'),
-      headers: {'Cache-Control': 'no-cache'},
-    ).timeout(AppConfig.shortTimeout);
+    final response = await http
+        .get(
+          Uri.parse('$databaseUrl/smartHome/${user.uid}/status.json'),
+          headers: {'Cache-Control': 'no-cache'},
+        )
+        .timeout(AppConfig.shortTimeout);
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
@@ -1018,7 +1042,9 @@ Future<String> _resolveAssistantEsp32Ip(WidgetRef ref) async {
   }
 }
 
-final esp32DeviceServiceProvider = FutureProvider<ESP32DeviceService>((ref) async {
+final esp32DeviceServiceProvider = FutureProvider<ESP32DeviceService>((
+  ref,
+) async {
   final ip = await ref.watch(esp32IpProvider.future);
   final bleService = ref.read(bleServiceProvider);
   return ESP32DeviceService(ip, bleService);
@@ -1027,8 +1053,7 @@ final esp32DeviceServiceProvider = FutureProvider<ESP32DeviceService>((ref) asyn
 // ────────────────────────────────────────────────────────────
 // 6. HTTP POLLING SERVICE WITH CACHING
 // ────────────────────────────────────────────────────────────
-final databaseUrlProvider = Provider((ref) =>
-AppConfig.databaseUrl);
+final databaseUrlProvider = Provider((ref) => AppConfig.databaseUrl);
 
 int _asEpochSeconds(dynamic value) {
   int parsed = 0;
@@ -1052,8 +1077,8 @@ final httpDataProvider = FutureProvider<Map<String, dynamic>>((ref) async {
 
   final processedData = <String, dynamic>{
     'sensors': <String, dynamic>{
-      'temperature': 0.0,
-      'humidity': 0.0,
+      'temperature': null,
+      'humidity': null,
       'flame': false,
     },
     'lights': <String, dynamic>{},
@@ -1069,12 +1094,16 @@ final httpDataProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   // Read cloud data, but do not let a Firebase timeout automatically mean that
   // the ESP32 is offline. Local HTTP and BLE are independent control paths.
   try {
-    final response = await http.get(
-      Uri.parse('$url/smartHome/${user.uid}.json'),
-      headers: const {'Cache-Control': 'no-cache'},
-    ).timeout(AppConfig.mediumTimeout);
+    final response = await http
+        .get(
+          Uri.parse('$url/smartHome/${user.uid}.json'),
+          headers: const {'Cache-Control': 'no-cache'},
+        )
+        .timeout(AppConfig.mediumTimeout);
 
-    if (response.statusCode == 200 && response.body.isNotEmpty && response.body != 'null') {
+    if (response.statusCode == 200 &&
+        response.body.isNotEmpty &&
+        response.body != 'null') {
       final dynamic decoded = jsonDecode(response.body);
       if (decoded is Map) {
         final jsonData = decoded.cast<String, dynamic>();
@@ -1083,16 +1112,20 @@ final httpDataProvider = FutureProvider<Map<String, dynamic>>((ref) async {
           processedData['sensors'] = Map<String, dynamic>.from(sensorsNode);
         } else {
           processedData['sensors'] = <String, dynamic>{
-            'temperature': jsonData['temperature'] ?? 0.0,
-            'humidity': jsonData['humidity'] ?? 0.0,
+            'temperature': jsonData['temperature'],
+            'humidity': jsonData['humidity'],
             'flame': jsonData['flame'] ?? false,
           };
         }
         if (jsonData['lights'] is Map) {
-          processedData['lights'] = Map<String, dynamic>.from(jsonData['lights'] as Map);
+          processedData['lights'] = Map<String, dynamic>.from(
+            jsonData['lights'] as Map,
+          );
         }
         if (jsonData['status'] is Map) {
-          processedData['status'] = Map<String, dynamic>.from(jsonData['status'] as Map);
+          processedData['status'] = Map<String, dynamic>.from(
+            jsonData['status'] as Map,
+          );
         }
       }
     }
@@ -1100,7 +1133,9 @@ final httpDataProvider = FutureProvider<Map<String, dynamic>>((ref) async {
     logDebug('Firebase dashboard read unavailable: $e');
   }
 
-  final status = Map<String, dynamic>.from(processedData['status'] as Map? ?? const {});
+  final status = Map<String, dynamic>.from(
+    processedData['status'] as Map? ?? const {},
+  );
   final lastSeen = _asEpochSeconds(status['lastSeen']);
   final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
   final heartbeatFresh = lastSeen > 0 && (now - lastSeen).abs() < 120;
@@ -1112,16 +1147,20 @@ final httpDataProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   try {
     final ip = await ref.watch(esp32IpProvider.future);
     if (ip.isNotEmpty) {
-      final localResponse = await http.get(
-        Uri.parse('http://$ip/api/wifi/status'),
-        headers: const {'Cache-Control': 'no-cache'},
-      ).timeout(AppConfig.shortTimeout);
+      final localResponse = await http
+          .get(
+            Uri.parse('http://$ip/api/wifi/status'),
+            headers: const {'Cache-Control': 'no-cache'},
+          )
+          .timeout(AppConfig.shortTimeout);
       if (localResponse.statusCode == 200 && localResponse.body.isNotEmpty) {
         final dynamic decoded = jsonDecode(localResponse.body);
         if (decoded is Map) {
           final local = decoded.cast<String, dynamic>();
           status.addAll(local);
-          status['online'] = local['online'] == true || (local['ip']?.toString().isNotEmpty ?? false);
+          status['online'] =
+              local['online'] == true ||
+              (local['ip']?.toString().isNotEmpty ?? false);
           status['source'] = 'local';
         }
       }
@@ -1149,7 +1188,7 @@ final smartHomeDataProvider = StreamProvider<Map<String, dynamic>>((ref) {
   final user = authService.currentUser;
 
   Map<String, dynamic> currentData = {
-    'sensors': {'temperature': 0.0, 'humidity': 0.0, 'flame': false},
+    'sensors': {'temperature': null, 'humidity': null, 'flame': false},
     'lights': {},
     'status': {'online': false},
   };
@@ -1164,7 +1203,9 @@ final smartHomeDataProvider = StreamProvider<Map<String, dynamic>>((ref) {
         'flame': bleService.flameDetected,
       };
       currentData['lights'] = Map.from(bleService.lights);
-      final status = Map<String, dynamic>.from(currentData['status'] as Map? ?? {});
+      final status = Map<String, dynamic>.from(
+        currentData['status'] as Map? ?? {},
+      );
       status['online'] = true;
       status['ip'] = status['ip'] ?? 'BLE';
       status['ping'] = status['ping'] ?? 0;
@@ -1192,7 +1233,9 @@ final smartHomeDataProvider = StreamProvider<Map<String, dynamic>>((ref) {
         currentData = httpData;
         if (!controller.isClosed) controller.add(Map.from(currentData));
       } else if (httpData.containsKey('status')) {
-        final status = Map<String, dynamic>.from(httpData['status'] as Map? ?? {});
+        final status = Map<String, dynamic>.from(
+          httpData['status'] as Map? ?? {},
+        );
         status['online'] = true;
         currentData['status'] = status;
         if (!controller.isClosed) controller.add(Map.from(currentData));
@@ -1224,7 +1267,10 @@ final smartHomeDataProvider = StreamProvider<Map<String, dynamic>>((ref) {
 
   fetchHttpData();
 
-  httpTimer = Timer.periodic(const Duration(seconds: 8), (_) => fetchHttpData());
+  httpTimer = Timer.periodic(
+    const Duration(seconds: 8),
+    (_) => fetchHttpData(),
+  );
 
   // Do not auto-open the browser Bluetooth chooser.
   // Bluetooth connection is now manual only, so cancelling the Web Bluetooth
@@ -1287,8 +1333,7 @@ class LightToggleService {
         return;
       } catch (e) {
         if (context.mounted) {
-          _showSnack(context, 'BLE error, trying Wi-Fi…',
-              color: Colors.orange);
+          _showSnack(context, 'BLE error, trying Wi-Fi…', color: Colors.orange);
         }
       }
     }
@@ -1296,9 +1341,9 @@ class LightToggleService {
     try {
       final response = await http
           .patch(
-        Uri.parse('$url/smartHome/${user.uid}/lights.json'),
-        body: jsonEncode({room: value}),
-      )
+            Uri.parse('$url/smartHome/${user.uid}/lights.json'),
+            body: jsonEncode({room: value}),
+          )
           .timeout(AppConfig.firebaseControlTimeout);
 
       if (response.statusCode != 200) {
@@ -1315,83 +1360,31 @@ class LightToggleService {
   }
 }
 
-void _showSnack(BuildContext context, String msg,
-    {Color color = Colors.white}) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-    content: Text(msg, style: const TextStyle(color: Colors.white)),
-    backgroundColor: color.withValues(alpha: 0.9),
-    behavior: SnackBarBehavior.floating,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-    margin: const EdgeInsets.all(16),
-    duration: const Duration(seconds: 2),
-  ));
+void _showSnack(
+  BuildContext context,
+  String msg, {
+  Color color = Colors.white,
+}) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(msg, style: const TextStyle(color: Colors.white)),
+      backgroundColor: color.withValues(alpha: 0.9),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      margin: const EdgeInsets.all(16),
+      duration: const Duration(seconds: 2),
+    ),
+  );
 }
 
 // ────────────────────────────────────────────────────────────
 // 9. WALLPAPER BACKGROUND
 // ────────────────────────────────────────────────────────────
 class _WallpaperBackground extends StatelessWidget {
-  final Widget child;
   const _WallpaperBackground({required this.child});
-
+  final Widget child;
   @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final w = MediaQuery.of(context).size.width;
-
-    return RepaintBoundary(
-      child: Stack(children: [
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? const [Color(0xFF0B0D1A), Color(0xFF0F1228), Color(0xFF0B0D1A)]
-                  : const [Color(0xFFF0F2FF), Color(0xFFEEEBFF), Color(0xFFF0F4FF)],
-            ),
-          ),
-        ),
-        Positioned(
-            top: -100,
-            left: -80,
-            child: _Blob(
-                color: isDark ? const Color(0xFF1A1060) : const Color(0xFFCCC8FF),
-                size: w * 0.9)),
-        Positioned(
-            top: 300,
-            right: -100,
-            child: _Blob(
-                color: isDark ? const Color(0xFF2A0D50) : const Color(0xFFE8D8FF),
-                size: w * 0.75)),
-        Positioned(
-            bottom: 80,
-            left: 0,
-            child: _Blob(
-                color: isDark ? const Color(0xFF0A2A1A) : const Color(0xFFBEF0D8),
-                size: w * 0.6)),
-        child,
-      ]),
-    );
-  }
-}
-
-class _Blob extends StatelessWidget {
-  final Color color;
-  final double size;
-  const _Blob({required this.color, required this.size});
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: size,
-    height: size,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      gradient: RadialGradient(
-        colors: [color.withValues(alpha: 0.5), color.withValues(alpha: 0)],
-      ),
-    ),
-  );
+  Widget build(BuildContext context) => HomeBackground(child: child);
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1456,68 +1449,67 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
 
   @override
   Widget build(BuildContext context) {
-    final bleService = ref.watch(bleServiceProvider);
     final selectedIndex = ref.watch(selectedNavIndexProvider);
     final isDesktop = ResponsiveHelper.isDesktop(context);
     final assistantName =
         ref.watch(assistantNameProvider).asData?.value ?? defaultAssistantName;
-
+    final unread = ref
+        .watch(appNotificationsProvider)
+        .where((n) => !n.read)
+        .length;
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      extendBody: true,
-      appBar: _GlassAppBar(
-        onRefresh: _manualRefresh,
-        bleStatus: bleService.currentStatus,
-        onConnectBLE: () => unawaited(bleService.connect().catchError((_) {})),
-      ),
       body: _WallpaperBackground(
-        // Keep every tab alive. AnimatedSwitcher was destroying Home when moving
-        // to Settings/Alerts, which could clear the cached rooms/devices while
-        // Firebase/local HTTP was temporarily unavailable. IndexedStack keeps the
-        // Home dashboard state stable between tab changes.
-        child: Row(
-          children: [
-            if (isDesktop)
-              _DesktopSidebar(
-                selectedIndex: selectedIndex,
-                assistantName: assistantName,
-                onTap: (index) {
-                  ref.read(selectedNavIndexProvider.notifier).state = index;
-                },
-                onAdd: () => _showQuickActionDialog(context),
-                onAssistant: () =>
-                    unawaited(_showEllieAssistant(assistantName)),
+        child: SafeArea(
+          bottom: false,
+          child: Row(
+            children: [
+              if (isDesktop)
+                _DesktopSidebar(
+                  selectedIndex: selectedIndex,
+                  assistantName: assistantName,
+                  onTap: (i) =>
+                      ref.read(selectedNavIndexProvider.notifier).state = i,
+                  onAdd: () => _showQuickActionDialog(context),
+                  onAssistant: () =>
+                      unawaited(_showEllieAssistant(assistantName)),
+                ),
+              Expanded(
+                child: IndexedStack(index: selectedIndex, children: _pages),
               ),
-            Expanded(
-              child: IndexedStack(
-                index: selectedIndex,
-                children: _pages,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-      floatingActionButton: isDesktop
-          ? null
-          : _PurpleFab(onTap: () {
-        HapticFeedback.mediumImpact();
-        unawaited(_showEllieAssistant(assistantName));
-      }),
-      floatingActionButtonLocation:
-      isDesktop ? null : FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: isDesktop
           ? null
-          : Padding(
-        padding:
-        const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-        child: _GlassBottomNav(
-          selectedIndex: selectedIndex,
-          onTap: (i) {
-            ref.read(selectedNavIndexProvider.notifier).state = i;
-          },
-        ),
-      ),
+          : HomeBackground(
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (selectedIndex == 0) ...[
+                        HomeVoiceButton(
+                          onPressed: () =>
+                              unawaited(_showEllieAssistant(assistantName)),
+                          label: 'Talk to $assistantName',
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      HomeBottomNav(
+                        index: selectedIndex,
+                        unreadCount: unread,
+                        onChanged: (i) =>
+                            ref.read(selectedNavIndexProvider.notifier).state =
+                                i,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
     );
   }
 }
@@ -1529,10 +1521,7 @@ class _PasswordDialog extends StatefulWidget {
   final VoidCallback onSuccess;
   final VoidCallback? onCancel;
 
-  const _PasswordDialog({
-    required this.onSuccess,
-    this.onCancel,
-  });
+  const _PasswordDialog({required this.onSuccess, this.onCancel});
 
   @override
   State<_PasswordDialog> createState() => _PasswordDialogState();
@@ -1580,17 +1569,16 @@ class _PasswordDialogState extends State<_PasswordDialog> {
             const SizedBox(height: 16),
             const Text(
               'Enter Password',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             Text(
               'This action requires admin password',
               style: TextStyle(
                 fontSize: 14,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.5),
               ),
             ),
             const SizedBox(height: 20),
@@ -1602,7 +1590,9 @@ class _PasswordDialogState extends State<_PasswordDialog> {
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.1),
                   ),
                 ),
                 focusedBorder: OutlineInputBorder(
@@ -1611,8 +1601,12 @@ class _PasswordDialogState extends State<_PasswordDialog> {
                 ),
                 suffixIcon: IconButton(
                   icon: Icon(
-                    _obscureText ? Icons.visibility_rounded : Icons.visibility_off_rounded,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                    _obscureText
+                        ? Icons.visibility_rounded
+                        : Icons.visibility_off_rounded,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.5),
                   ),
                   onPressed: () => setState(() => _obscureText = !_obscureText),
                 ),
@@ -1699,7 +1693,9 @@ class _EditChannelDialogState extends ConsumerState<_EditChannelDialog> {
   @override
   void initState() {
     super.initState();
-    _moduleId = widget.currentModuleId.isEmpty ? 'io_1' : widget.currentModuleId;
+    _moduleId = widget.currentModuleId.isEmpty
+        ? 'io_1'
+        : widget.currentModuleId;
     _channel = widget.currentChannel >= 0 ? widget.currentChannel : null;
     _load();
   }
@@ -1707,19 +1703,23 @@ class _EditChannelDialogState extends ConsumerState<_EditChannelDialog> {
   Future<void> _load() async {
     final service = await ref.read(esp32DeviceServiceProvider.future);
     final modules = await service.getIoModules();
-    if (!modules.any((m) => m['id'].toString() == _moduleId) && modules.isNotEmpty) {
+    if (!modules.any((m) => m['id'].toString() == _moduleId) &&
+        modules.isNotEmpty) {
       _moduleId = modules.first['id'].toString();
     }
     final channels = await service.getSelectableChannels(
       moduleId: _moduleId,
       excludingDeviceId: widget.deviceId,
-      currentChannel: _moduleId == widget.currentModuleId ? widget.currentChannel : null,
+      currentChannel: _moduleId == widget.currentModuleId
+          ? widget.currentChannel
+          : null,
     );
     if (!mounted) return;
     setState(() {
       _modules = modules;
       _channels = channels;
-      if (!_channels.contains(_channel)) _channel = _channels.isEmpty ? null : _channels.first;
+      if (!_channels.contains(_channel))
+        _channel = _channels.isEmpty ? null : _channels.first;
       _loading = false;
     });
   }
@@ -1733,7 +1733,9 @@ class _EditChannelDialogState extends ConsumerState<_EditChannelDialog> {
     final channels = await service.getSelectableChannels(
       moduleId: moduleId,
       excludingDeviceId: widget.deviceId,
-      currentChannel: moduleId == widget.currentModuleId ? widget.currentChannel : null,
+      currentChannel: moduleId == widget.currentModuleId
+          ? widget.currentChannel
+          : null,
     );
     if (!mounted) return;
     setState(() {
@@ -1760,7 +1762,11 @@ class _EditChannelDialogState extends ConsumerState<_EditChannelDialog> {
       Navigator.pop(context, true);
       _showSnack(context, 'I/O output updated.', color: _DT.green);
     } else {
-      _showSnack(context, 'That module output is already assigned.', color: _DT.red);
+      _showSnack(
+        context,
+        'That module output is already assigned.',
+        color: _DT.red,
+      );
     }
   }
 
@@ -1776,18 +1782,29 @@ class _EditChannelDialogState extends ConsumerState<_EditChannelDialog> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(widget.deviceName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text(
+                    widget.deviceName,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 18),
                   DropdownButtonFormField<String>(
-                    value: _modules.any((m) => m['id'].toString() == _moduleId) ? _moduleId : null,
+                    value: _modules.any((m) => m['id'].toString() == _moduleId)
+                        ? _moduleId
+                        : null,
                     decoration: const InputDecoration(labelText: 'I/O module'),
                     items: _modules.map((module) {
                       final id = module['id'].toString();
                       final name = module['name']?.toString() ?? id;
                       final bus = module['busId'] ?? 0;
-                      return DropdownMenuItem(value: id, child: Text('$name • Bus $bus'));
+                      return DropdownMenuItem(
+                        value: id,
+                        child: Text('$name • Bus $bus'),
+                      );
                     }).toList(),
-                    onChanged: _saving ? null : (value) => value == null ? null : _changeModule(value),
+                    onChanged: _saving
+                        ? null
+                        : (value) =>
+                              value == null ? null : _changeModule(value),
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<int>(
@@ -1797,22 +1814,33 @@ class _EditChannelDialogState extends ConsumerState<_EditChannelDialog> {
                       hintText: _channels.isEmpty ? 'No free outputs' : null,
                     ),
                     items: _channels
-                        .map((channel) => DropdownMenuItem(
-                              value: channel,
-                              child: Text('P$channel / Relay ${channel + 1}'),
-                            ))
+                        .map(
+                          (channel) => DropdownMenuItem(
+                            value: channel,
+                            child: Text('P$channel / Relay ${channel + 1}'),
+                          ),
+                        )
                         .toList(),
-                    onChanged: _saving ? null : (value) => setState(() => _channel = value),
+                    onChanged: _saving
+                        ? null
+                        : (value) => setState(() => _channel = value),
                   ),
                 ],
               ),
       ),
       actions: [
-        TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         FilledButton(
           onPressed: _saving || _loading || _channel == null ? null : _save,
           child: _saving
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Text('Save'),
         ),
       ],
@@ -1907,15 +1935,15 @@ class _QuickActionDialogState extends ConsumerState<_QuickActionDialog> {
   Future<void> _manageRooms() async {
     final updated = await showDialog<List<String>>(
       context: context,
-      builder: (_) => _RoomManagementDialog(
-        rooms: _rooms,
-        onRoomsUpdated: (_) async {},
-      ),
+      builder: (_) =>
+          _RoomManagementDialog(rooms: _rooms, onRoomsUpdated: (_) async {}),
     );
     if (updated == null || !mounted) return;
     setState(() {
       _rooms = updated;
-      _room = updated.contains(_room) ? _room : (updated.isEmpty ? '' : updated.first);
+      _room = updated.contains(_room)
+          ? _room
+          : (updated.isEmpty ? '' : updated.first);
     });
   }
 
@@ -1926,7 +1954,11 @@ class _QuickActionDialogState extends ConsumerState<_QuickActionDialog> {
       return;
     }
     if (_channel == null) {
-      _showSnack(context, 'This I/O module has no free channels.', color: Colors.orange);
+      _showSnack(
+        context,
+        'This I/O module has no free channels.',
+        color: Colors.orange,
+      );
       return;
     }
     if (!_formKey.currentState!.validate()) return;
@@ -1940,7 +1972,11 @@ class _QuickActionDialogState extends ConsumerState<_QuickActionDialog> {
           _channel = free.isEmpty ? null : free.first;
           _saving = false;
         });
-        _showSnack(context, 'That output was just assigned. Choose another.', color: Colors.orange);
+        _showSnack(
+          context,
+          'That output was just assigned. Choose another.',
+          color: Colors.orange,
+        );
       }
       return;
     }
@@ -1984,9 +2020,23 @@ class _QuickActionDialogState extends ConsumerState<_QuickActionDialog> {
                 children: [
                   Row(
                     children: [
-                      const Expanded(child: Text('Add New Device', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700))),
-                      IconButton(onPressed: _manageRooms, icon: const Icon(Icons.meeting_room_rounded)),
-                      IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
+                      const Expanded(
+                        child: Text(
+                          'Add New Device',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _manageRooms,
+                        icon: const Icon(Icons.meeting_room_rounded),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
                     ],
                   ),
                   if (_loading) const LinearProgressIndicator(),
@@ -1994,30 +2044,45 @@ class _QuickActionDialogState extends ConsumerState<_QuickActionDialog> {
                   TextFormField(
                     controller: _nameController,
                     decoration: const InputDecoration(labelText: 'Device name'),
-                    validator: (v) => v == null || v.trim().isEmpty ? 'Enter a device name' : null,
+                    validator: (v) => v == null || v.trim().isEmpty
+                        ? 'Enter a device name'
+                        : null,
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<int>(
                     value: _type,
                     decoration: const InputDecoration(labelText: 'Device type'),
-                    items: _types.map((type) => DropdownMenuItem(
-                      value: (type['type'] as num).toInt(),
-                      child: Text(type['name'].toString()),
-                    )).toList(),
-                    onChanged: _saving ? null : (value) => setState(() => _type = value ?? 0),
+                    items: _types
+                        .map(
+                          (type) => DropdownMenuItem(
+                            value: (type['type'] as num).toInt(),
+                            child: Text(type['name'].toString()),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: _saving
+                        ? null
+                        : (value) => setState(() => _type = value ?? 0),
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
-                    value: _modules.any((m) => m['id'].toString() == _moduleId) ? _moduleId : null,
+                    value: _modules.any((m) => m['id'].toString() == _moduleId)
+                        ? _moduleId
+                        : null,
                     decoration: const InputDecoration(labelText: 'I/O module'),
                     items: _modules.map((module) {
                       final id = module['id'].toString();
                       return DropdownMenuItem(
                         value: id,
-                        child: Text('${module['name'] ?? id} • Bus ${module['busId'] ?? 0}'),
+                        child: Text(
+                          '${module['name'] ?? id} • Bus ${module['busId'] ?? 0}',
+                        ),
                       );
                     }).toList(),
-                    onChanged: _saving || _loading ? null : (value) => value == null ? null : _selectModule(value),
+                    onChanged: _saving || _loading
+                        ? null
+                        : (value) =>
+                              value == null ? null : _selectModule(value),
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<int>(
@@ -2026,15 +2091,31 @@ class _QuickActionDialogState extends ConsumerState<_QuickActionDialog> {
                       labelText: 'Module output channel',
                       hintText: _channels.isEmpty ? 'No free outputs' : null,
                     ),
-                    items: _channels.map((c) => DropdownMenuItem(value: c, child: Text('P$c / Relay ${c + 1}'))).toList(),
-                    onChanged: _saving || _loading ? null : (value) => setState(() => _channel = value),
+                    items: _channels
+                        .map(
+                          (c) => DropdownMenuItem(
+                            value: c,
+                            child: Text('P$c / Relay ${c + 1}'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: _saving || _loading
+                        ? null
+                        : (value) => setState(() => _channel = value),
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
                     value: _rooms.contains(_room) ? _room : null,
                     decoration: const InputDecoration(labelText: 'Room'),
-                    items: _rooms.map((room) => DropdownMenuItem(value: room, child: Text(room))).toList(),
-                    onChanged: _saving ? null : (value) => setState(() => _room = value ?? ''),
+                    items: _rooms
+                        .map(
+                          (room) =>
+                              DropdownMenuItem(value: room, child: Text(room)),
+                        )
+                        .toList(),
+                    onChanged: _saving
+                        ? null
+                        : (value) => setState(() => _room = value ?? ''),
                   ),
                   const SizedBox(height: 22),
                   SizedBox(
@@ -2043,7 +2124,11 @@ class _QuickActionDialogState extends ConsumerState<_QuickActionDialog> {
                     child: FilledButton(
                       onPressed: _saving || _loading ? null : _add,
                       child: _saving
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
                           : const Text('Add Device'),
                     ),
                   ),
@@ -2070,7 +2155,8 @@ class _RoomManagementDialog extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<_RoomManagementDialog> createState() => _RoomManagementDialogState();
+  ConsumerState<_RoomManagementDialog> createState() =>
+      _RoomManagementDialogState();
 }
 
 class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
@@ -2100,7 +2186,9 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
     final name = _newRoomController.text.trim();
     if (name.isEmpty) return;
 
-    final exists = _rooms.any((room) => room.toLowerCase() == name.toLowerCase());
+    final exists = _rooms.any(
+      (room) => room.toLowerCase() == name.toLowerCase(),
+    );
     if (exists) {
       _showSnack(context, 'Room already exists', color: Colors.orange);
       return;
@@ -2146,7 +2234,10 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
           onSubmitted: (value) => Navigator.pop(context, value.trim()),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
             child: const Text('Save'),
@@ -2157,7 +2248,9 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
     controller.dispose();
 
     if (newName == null || newName.isEmpty || newName == oldRoom) return;
-    final exists = _rooms.any((room) => room != oldRoom && room.toLowerCase() == newName.toLowerCase());
+    final exists = _rooms.any(
+      (room) => room != oldRoom && room.toLowerCase() == newName.toLowerCase(),
+    );
     if (exists) {
       _showSnack(context, 'Room already exists', color: Colors.orange);
       return;
@@ -2174,7 +2267,10 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
     try {
       final service = await ref.read(esp32DeviceServiceProvider.future);
       final roomsSaved = await service.saveRooms(_rooms);
-      final devicesRenamed = await service.renameRoomInDevices(oldRoom: oldRoom, newRoom: newName);
+      final devicesRenamed = await service.renameRoomInDevices(
+        oldRoom: oldRoom,
+        newRoom: newName,
+      );
       if (!mounted) return;
 
       if (roomsSaved && devicesRenamed) {
@@ -2207,10 +2303,16 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
           'Delete "$room" from the room list? Devices already assigned to this room will stay in Firebase, but the room tab will disappear until you add/rename it again.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: _DT.red, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _DT.red,
+              foregroundColor: Colors.white,
+            ),
             child: const Text('Delete'),
           ),
         ],
@@ -2276,10 +2378,14 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  _rooms.isEmpty ? 'No rooms yet' : '${_rooms.length} rooms total',
+                  _rooms.isEmpty
+                      ? 'No rooms yet'
+                      : '${_rooms.length} rooms total',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.5),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -2290,8 +2396,13 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
                         controller: _newRoomController,
                         decoration: InputDecoration(
                           hintText: 'New room name',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
                         ),
                         onFieldSubmitted: (_) => _addRoom(),
                         enabled: !_isSaving,
@@ -2303,15 +2414,23 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _DT.purple,
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 14,
+                        ),
                       ),
                       child: _isSaving
                           ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
                           : const Text('Add'),
                     ),
                   ],
@@ -2321,61 +2440,90 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
                   constraints: const BoxConstraints(maxHeight: 260),
                   child: _rooms.isEmpty
                       ? Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 28),
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.meeting_room_outlined,
-                          size: 42,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.25),
-                        ),
-                        const SizedBox(height: 10),
-                        const Text('No rooms yet. Add your first room!'),
-                      ],
-                    ),
-                  )
+                          padding: const EdgeInsets.symmetric(vertical: 28),
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.meeting_room_outlined,
+                                size: 42,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.25),
+                              ),
+                              const SizedBox(height: 10),
+                              const Text('No rooms yet. Add your first room!'),
+                            ],
+                          ),
+                        )
                       : ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: _rooms.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      final room = _rooms[index];
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+                          shrinkWrap: true,
+                          itemCount: _rooms.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 8),
+                          itemBuilder: (context, index) {
+                            final room = _rooms[index];
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.05),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.room_rounded,
+                                    color: _DT.purple,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: Text(room)),
+                                  IconButton(
+                                    tooltip: 'Edit room',
+                                    icon: const Icon(
+                                      Icons.edit_rounded,
+                                      color: _DT.purple,
+                                      size: 20,
+                                    ),
+                                    onPressed: _isSaving
+                                        ? null
+                                        : () => _editRoom(room),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Delete room',
+                                    icon: const Icon(
+                                      Icons.delete_rounded,
+                                      color: _DT.red,
+                                      size: 20,
+                                    ),
+                                    onPressed: _isSaving
+                                        ? null
+                                        : () => _removeRoom(room),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
                         ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.room_rounded, color: _DT.purple, size: 16),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text(room)),
-                            IconButton(
-                              tooltip: 'Edit room',
-                              icon: const Icon(Icons.edit_rounded, color: _DT.purple, size: 20),
-                              onPressed: _isSaving ? null : () => _editRoom(room),
-                            ),
-                            IconButton(
-                              tooltip: 'Delete room',
-                              icon: const Icon(Icons.delete_rounded, color: _DT.red, size: 20),
-                              onPressed: _isSaving ? null : () => _removeRoom(room),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
                 ),
                 const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _isSaving ? null : () => Navigator.pop(context, List<String>.from(_rooms)),
+                    onPressed: _isSaving
+                        ? null
+                        : () =>
+                              Navigator.pop(context, List<String>.from(_rooms)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _DT.purple,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     child: const Text('Done'),
@@ -2393,255 +2541,10 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
 // ────────────────────────────────────────────────────────────
 // 15. PURPLE FAB
 // ────────────────────────────────────────────────────────────
-class _PurpleFab extends StatelessWidget {
-  final VoidCallback onTap;
-  const _PurpleFab({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: 'Open voice assistant',
-      child: Tooltip(
-        message: 'Voice assistant',
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-        width: 56,
-        height: 56,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF8B7FFF), _DT.purple],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: _DT.purple.withValues(alpha: 0.45),
-              blurRadius: 20,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-            child: const Icon(
-              Icons.graphic_eq_rounded,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 // ────────────────────────────────────────────────────────────
 // 16. GLASS APP BAR
 // ────────────────────────────────────────────────────────────
-class _GlassAppBar extends ConsumerWidget implements PreferredSizeWidget {
-  final Future<void> Function() onRefresh;
-  final BleStatus bleStatus;
-  final VoidCallback onConnectBLE;
-
-  const _GlassAppBar({
-    required this.onRefresh,
-    required this.bleStatus,
-    required this.onConnectBLE,
-  });
-
-  void _toggleTheme(WidgetRef ref) {
-    final current = ref.read(themeModeProvider);
-    final next =
-    current == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
-    ref.read(themeModeProvider.notifier).state = next;
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final authAsync = ref.watch(authServiceProvider);
-    final userData = ref.watch(userDataProvider).asData?.value;
-    final authUser = authAsync.asData?.value.currentUser ?? FirebaseAuth.instance.currentUser;
-    final displayName = (userData?['displayName']?.toString().trim().isNotEmpty == true)
-        ? userData!['displayName'].toString().trim()
-        : ((authUser?.displayName?.trim().isNotEmpty == true)
-        ? authUser!.displayName!.trim()
-        : (authUser?.email?.split('@').first ?? 'User'));
-    final initials = _initialsFor(displayName);
-    final greeting = _getGreeting(displayName);
-    final notifications = ref.watch(appNotificationsProvider);
-    final unreadCount = notifications.where((item) => !item.read).length;
-
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.15)
-              : Colors.white.withValues(alpha: 0.3),
-          child: AppBar(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            leading: Padding(
-              padding: const EdgeInsets.only(left: 16),
-              child: CircleAvatar(
-                radius: 18,
-                backgroundColor: _DT.purple,
-                child: Text(
-                  initials,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ),
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(_formattedDate(),
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.5),
-                        fontWeight: FontWeight.w500)),
-                Text(greeting,
-                    style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        height: 1.2)),
-              ],
-            ),
-            actions: [
-              _ABBtn(
-                onTap: () => _toggleTheme(ref),
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.08)
-                        : Colors.black.withValues(alpha: 0.06),
-                  ),
-                  child: Icon(
-                    isDark
-                        ? Icons.dark_mode_rounded
-                        : Icons.light_mode_rounded,
-                    size: 18,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.7),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              _ABBtn(
-                onTap: () {
-                  ref.read(selectedNavIndexProvider.notifier).state = 2;
-                  ref.read(appNotificationsProvider.notifier).markAllRead();
-                },
-                child: Stack(clipBehavior: Clip.none, children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.08)
-                          : Colors.black.withValues(alpha: 0.06),
-                    ),
-                    child: Icon(Icons.notifications_outlined,
-                        size: 18,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.7)),
-                  ),
-                  if (unreadCount > 0)
-                    Positioned(
-                      top: -2,
-                      right: -2,
-                      child: Container(
-                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        decoration: const BoxDecoration(
-                          color: _DT.red,
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          unreadCount > 9 ? '9+' : '$unreadCount',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ),
-                ]),
-              ),
-              const SizedBox(width: 12),
-            ],
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(0.5),
-              child: Container(
-                height: 0.5,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : Colors.black.withValues(alpha: 0.06),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _formattedDate() {
-    final now = DateTime.now();
-    const days = [
-      'Monday', 'Tuesday', 'Wednesday', 'Thursday',
-      'Friday', 'Saturday', 'Sunday'
-    ];
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
-    return '${days[now.weekday - 1]}, ${now.day} ${months[now.month - 1]}';
-  }
-
-  String _getGreeting(String name) {
-    final firstName = name.trim().split(RegExp(r'\s+')).first;
-    final h = DateTime.now().hour;
-    if (h < 12) return 'Good Morning, $firstName';
-    if (h < 17) return 'Good Afternoon, $firstName';
-    return 'Good Evening, $firstName';
-  }
-
-  String _initialsFor(String name) {
-    final parts = name
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((part) => part.isNotEmpty)
-        .toList();
-    if (parts.isEmpty) return 'U';
-    if (parts.length == 1) {
-      final text = parts.first;
-      return text.substring(0, text.length >= 2 ? 2 : 1).toUpperCase();
-    }
-    return (parts.first[0] + parts.last[0]).toUpperCase();
-  }
-
-  @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight + 0.5);
-}
 
 class _ABBtn extends StatelessWidget {
   final Widget child;
@@ -2686,10 +2589,9 @@ class _DesktopSidebar extends StatelessWidget {
             : Colors.white.withValues(alpha: 0.70),
         border: Border(
           right: BorderSide(
-            color: Theme.of(context)
-                .colorScheme
-                .onSurface
-                .withValues(alpha: 0.08),
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.08),
           ),
         ),
       ),
@@ -2744,10 +2646,7 @@ class _DesktopSidebar extends StatelessWidget {
                     padding: const EdgeInsets.all(14),
                     child: Row(
                       children: [
-                        const Icon(
-                          Icons.graphic_eq_rounded,
-                          color: _DT.purple,
-                        ),
+                        const Icon(Icons.graphic_eq_rounded, color: _DT.purple),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
@@ -2814,44 +2713,38 @@ class _DesktopNavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-        color: selected
-            ? _DT.purple.withValues(alpha: 0.18)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          onTap: onTap,
+    color: selected ? _DT.purple.withValues(alpha: 0.18) : Colors.transparent,
+    borderRadius: BorderRadius.circular(14),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: selected
-                    ? _DT.purple.withValues(alpha: 0.28)
-                    : Colors.transparent,
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  icon,
-                  size: 20,
-                  color: selected ? _DT.purple : Colors.grey,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: selected ? null : Colors.grey,
-                    fontSize: 13,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
+          border: Border.all(
+            color: selected
+                ? _DT.purple.withValues(alpha: 0.28)
+                : Colors.transparent,
           ),
         ),
-      );
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: selected ? _DT.purple : Colors.grey),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? null : Colors.grey,
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 // ────────────────────────────────────────────────────────────
@@ -2910,7 +2803,10 @@ class _HomeContent extends ConsumerStatefulWidget {
   ConsumerState<_HomeContent> createState() => _HomeContentState();
 }
 
-class _HomeContentState extends ConsumerState<_HomeContent> {
+class _HomeContentState extends ConsumerState<_HomeContent>
+    with WidgetsBindingObserver {
+  bool _dashboardRefreshInProgress = false;
+  int _deviceRevision = 0;
   String _selectedRoom = '';
   List<String> _rooms = [];
   Map<String, dynamic> _esp32Devices = {'devices': []};
@@ -2929,6 +2825,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadDashboardState();
 
     _refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) {
@@ -2938,8 +2835,20 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _refreshTimer?.cancel();
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_loadDashboardStateSilently());
+      _refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+        if (mounted) unawaited(_loadDashboardStateSilently());
+      });
+    }
   }
 
   void updateDevices(Map<String, dynamic> newDevices) {
@@ -2962,7 +2871,8 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       }
     }
 
-    return roomSet.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return roomSet.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   }
 
   String _effectiveSelectedRoom(List<String> rooms) {
@@ -2978,13 +2888,13 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     }
   }
 
-  List<Map<String, dynamic>> _applyPendingDeviceStates(List<dynamic> rawDevices) {
+  List<Map<String, dynamic>> _applyPendingDeviceStates(
+    List<dynamic> rawDevices,
+  ) {
     final now = DateTime.now();
     final expired = <String>[];
 
-    final devices = rawDevices
-        .whereType<Map>()
-        .map((device) {
+    final devices = rawDevices.whereType<Map>().map((device) {
       final updated = Map<String, dynamic>.from(device);
       final id = updated['id']?.toString() ?? '';
       if (id.isEmpty) return updated;
@@ -3005,8 +2915,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         expired.add(id);
       }
       return updated;
-    })
-        .toList();
+    }).toList();
 
     for (final id in expired) {
       _pendingDeviceStates.remove(id);
@@ -3021,21 +2930,22 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     return jsonEncode(a) == jsonEncode(b);
   }
 
-
   void _syncSystemNotifications({
     required bool flame,
     required bool online,
     required BleStatus bleStatus,
   }) {
     final controller = ref.read(appNotificationsProvider.notifier);
-    final bleConnected = bleStatus == BleStatus.connected || bleStatus == BleStatus.dataUpdated;
+    final bleConnected =
+        bleStatus == BleStatus.connected || bleStatus == BleStatus.dataUpdated;
 
     if (_lastFlameDetected != null && _lastFlameDetected != flame) {
       if (flame) {
         controller.push(
           key: 'flame_alert',
           title: 'Flame detected',
-          message: 'The flame sensor reported a possible fire event. Check the area now.',
+          message:
+              'The flame sensor reported a possible fire event. Check the area now.',
           icon: Icons.local_fire_department_rounded,
           color: _DT.red,
           suppressFor: const Duration(seconds: 10),
@@ -3066,11 +2976,15 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     if (_lastBleConnected != null && _lastBleConnected != bleConnected) {
       controller.push(
         key: bleConnected ? 'ble_connected' : 'ble_disconnected',
-        title: bleConnected ? 'Bluetooth backup connected' : 'Bluetooth backup disconnected',
+        title: bleConnected
+            ? 'Bluetooth backup connected'
+            : 'Bluetooth backup disconnected',
         message: bleConnected
             ? 'Direct offline control is ready.'
             : 'Bluetooth backup is not connected.',
-        icon: bleConnected ? Icons.bluetooth_connected_rounded : Icons.bluetooth_disabled_rounded,
+        icon: bleConnected
+            ? Icons.bluetooth_connected_rounded
+            : Icons.bluetooth_disabled_rounded,
         color: bleConnected ? _DT.blue : Colors.grey,
       );
     }
@@ -3081,14 +2995,17 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
   }
 
   Future<void> _loadDashboardState() async {
-    if (_isLoadingDevices) return;
+    if (_dashboardRefreshInProgress || !mounted) return;
+    _dashboardRefreshInProgress = true;
     setState(() => _isLoadingDevices = true);
 
     try {
       final service = await ref.read(esp32DeviceServiceProvider.future);
       final result = await service.getDevices();
       final rooms = await service.getRooms();
-      final devicesList = _applyPendingDeviceStates(result['devices'] as List? ?? []);
+      final devicesList = _applyPendingDeviceStates(
+        result['devices'] as List? ?? [],
+      );
       final visibleRooms = {...rooms};
       if (visibleRooms.isEmpty) {
         for (final device in devicesList) {
@@ -3120,12 +3037,17 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       if (ble.isConnected) {
         try {
           await ble.refreshDevices().timeout(const Duration(seconds: 4));
-          bleDevices = ble.devices.map((d) => Map<String, dynamic>.from(d)).toList();
+          bleDevices = ble.devices
+              .map((d) => Map<String, dynamic>.from(d))
+              .toList();
         } catch (_) {
-          bleDevices = ble.devices.map((d) => Map<String, dynamic>.from(d)).toList();
+          bleDevices = ble.devices
+              .map((d) => Map<String, dynamic>.from(d))
+              .toList();
         }
       }
 
+      if (!mounted) return;
       setState(() {
         if (bleDevices.isNotEmpty) {
           final visibleRooms = <String>{};
@@ -3134,16 +3056,22 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
             if (room.isNotEmpty) visibleRooms.add(room);
           }
           _esp32Devices = {'devices': bleDevices};
-          _rooms = visibleRooms.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+          _rooms = visibleRooms.toList()
+            ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
           _syncSelectedRoom(_rooms);
         }
         _isLoadingDevices = false;
         _initialLoadDone = true;
       });
+    } finally {
+      _dashboardRefreshInProgress = false;
     }
   }
 
   Future<void> _loadDashboardStateSilently() async {
+    if (_dashboardRefreshInProgress || !mounted) return;
+    _dashboardRefreshInProgress = true;
+    final revision = _deviceRevision;
     try {
       if (_togglingDeviceIds.isNotEmpty) {
         return;
@@ -3152,17 +3080,20 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       final service = await ref.read(esp32DeviceServiceProvider.future);
       final result = await service.getDevices();
       final rooms = await service.getRooms();
-      final mergedDevices = _applyPendingDeviceStates(result['devices'] as List? ?? []);
-      if (!mounted) return;
-
+      if (!mounted || revision != _deviceRevision) return;
+      final mergedDevices = _applyPendingDeviceStates(
+        result['devices'] as List? ?? [],
+      );
       final currentDevices = _esp32Devices['devices'] as List? ?? [];
-      final nextRooms = rooms.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      final nextRooms = rooms.toList()
+        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
       // Never let a temporary empty Firebase/local HTTP response wipe the
       // already visible dashboard. This was the reason rooms/devices could
       // disappear after moving between tabs.
       if (mergedDevices.isEmpty && currentDevices.isNotEmpty) return;
-      if (nextRooms.isEmpty && _rooms.isNotEmpty && mergedDevices.isEmpty) return;
+      if (nextRooms.isEmpty && _rooms.isNotEmpty && mergedDevices.isEmpty)
+        return;
 
       final roomsChanged = jsonEncode(_rooms) != jsonEncode(nextRooms);
       final devicesChanged = !_deviceListsEqual(currentDevices, mergedDevices);
@@ -3170,11 +3101,15 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
 
       setState(() {
         _esp32Devices = {'devices': mergedDevices};
-        _rooms = nextRooms.isEmpty ? _getVisibleRooms(mergedDevices) : nextRooms;
+        _rooms = nextRooms.isEmpty
+            ? _getVisibleRooms(mergedDevices)
+            : nextRooms;
         _syncSelectedRoom(_getVisibleRooms(mergedDevices));
       });
     } catch (_) {
       // Silent fail for auto-refresh.
+    } finally {
+      _dashboardRefreshInProgress = false;
     }
   }
 
@@ -3183,7 +3118,12 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     await widget.onRefresh();
   }
 
-  void _showDeviceOptions(String deviceId, String deviceName, String currentModuleId, int currentChannel) {
+  void _showDeviceOptions(
+    String deviceId,
+    String deviceName,
+    String currentModuleId,
+    int currentChannel,
+  ) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -3200,7 +3140,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 shape: BoxShape.circle,
                 color: _DT.purple.withValues(alpha: 0.15),
               ),
-              child: const Icon(Icons.devices_rounded, color: _DT.purple, size: 30),
+              child: const Icon(
+                Icons.devices_rounded,
+                color: _DT.purple,
+                size: 30,
+              ),
             ),
             const SizedBox(height: 16),
             Text(
@@ -3214,7 +3158,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   : 'Output not assigned — choose P0 to P7',
               style: TextStyle(
                 fontSize: 14,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.5),
               ),
             ),
             const SizedBox(height: 20),
@@ -3273,7 +3219,11 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   shape: BoxShape.circle,
                   color: _DT.red.withValues(alpha: 0.15),
                 ),
-                child: const Icon(Icons.warning_rounded, color: _DT.red, size: 30),
+                child: const Icon(
+                  Icons.warning_rounded,
+                  color: _DT.red,
+                  size: 30,
+                ),
               ),
               const SizedBox(height: 16),
               const Text(
@@ -3285,36 +3235,59 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 'Are you sure you want to remove "$deviceName"?',
                 style: TextStyle(
                   fontSize: 14,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),
               Row(
                 children: [
-                  Expanded(child: TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))),
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () async {
                         Navigator.pop(context);
                         try {
-                          final service = await ref.read(esp32DeviceServiceProvider.future);
+                          final service = await ref.read(
+                            esp32DeviceServiceProvider.future,
+                          );
                           final success = await service.removeDevice(deviceId);
                           if (success) {
                             await _loadDashboardState();
-                            _showSnack(context, '✅ Device removed', color: _DT.green);
+                            _showSnack(
+                              context,
+                              '✅ Device removed',
+                              color: _DT.green,
+                            );
                           } else {
-                            _showSnack(context, '❌ Failed to remove device', color: _DT.red);
+                            _showSnack(
+                              context,
+                              '❌ Failed to remove device',
+                              color: _DT.red,
+                            );
                           }
                         } catch (e) {
-                          _showSnack(context, '❌ Error: ${e.toString()}', color: _DT.red);
+                          _showSnack(
+                            context,
+                            '❌ Error: ${e.toString()}',
+                            color: _DT.red,
+                          );
                         }
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _DT.red,
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                       child: const Text('Remove'),
@@ -3331,6 +3304,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
 
   Future<void> _controlDevice(String id, bool state) async {
     if (_togglingDeviceIds.contains(id)) return;
+    _deviceRevision++;
 
     final devices = List<dynamic>.from(_esp32Devices['devices'] as List? ?? []);
     final index = devices.indexWhere((d) => d is Map && d['id'] == id);
@@ -3360,10 +3334,16 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         _pendingDeviceStateTimes.remove(id);
         _togglingDeviceIds.remove(id);
 
-        final revertedDevices = List<dynamic>.from(_esp32Devices['devices'] as List? ?? []);
-        final revertIndex = revertedDevices.indexWhere((d) => d is Map && d['id'] == id);
+        final revertedDevices = List<dynamic>.from(
+          _esp32Devices['devices'] as List? ?? [],
+        );
+        final revertIndex = revertedDevices.indexWhere(
+          (d) => d is Map && d['id'] == id,
+        );
         if (revertIndex != -1 && revertedDevices[revertIndex] is Map) {
-          final revertedDevice = Map<String, dynamic>.from(revertedDevices[revertIndex] as Map);
+          final revertedDevice = Map<String, dynamic>.from(
+            revertedDevices[revertIndex] as Map,
+          );
           revertedDevice['state'] = previousState;
           revertedDevices[revertIndex] = revertedDevice;
           setState(() => _esp32Devices = {'devices': revertedDevices});
@@ -3375,19 +3355,22 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       final deviceName = index != -1 && devices[index] is Map
           ? ((devices[index] as Map)['name']?.toString() ?? 'Device')
           : 'Device';
-      ref.read(appNotificationsProvider.notifier).push(
-        key: 'device_${id}_state',
-        title: '$deviceName ${state ? 'turned on' : 'turned off'}',
-        message: 'PCF8574 channel command was accepted by the active control path.',
-        icon: state ? Icons.power_rounded : Icons.power_off_rounded,
-        color: state ? _DT.green : Colors.grey,
-        suppressFor: const Duration(seconds: 2),
-      );
+      ref
+          .read(appNotificationsProvider.notifier)
+          .push(
+            key: 'device_${id}_state',
+            title: '$deviceName ${state ? 'turned on' : 'turned off'}',
+            message:
+                'PCF8574 channel command was accepted by the active control path.',
+            icon: state ? Icons.power_rounded : Icons.power_off_rounded,
+            color: state ? _DT.green : Colors.grey,
+            suppressFor: const Duration(seconds: 2),
+          );
 
       // Unlock the button after the command completes, but keep the optimistic
       // state until a fresh ESP32 read confirms it. Removing the pending state
       // after only 350 ms allowed an older BLE/Firebase value to flash back ON.
-      _togglingDeviceIds.remove(id);
+      setState(() => _togglingDeviceIds.remove(id));
       Future.delayed(const Duration(milliseconds: 180), () {
         if (!mounted) return;
         unawaited(_loadDashboardStateSilently());
@@ -3398,10 +3381,16 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       _pendingDeviceStateTimes.remove(id);
       _togglingDeviceIds.remove(id);
 
-      final revertedDevices = List<dynamic>.from(_esp32Devices['devices'] as List? ?? []);
-      final revertIndex = revertedDevices.indexWhere((d) => d is Map && d['id'] == id);
+      final revertedDevices = List<dynamic>.from(
+        _esp32Devices['devices'] as List? ?? [],
+      );
+      final revertIndex = revertedDevices.indexWhere(
+        (d) => d is Map && d['id'] == id,
+      );
       if (revertIndex != -1 && revertedDevices[revertIndex] is Map) {
-        final revertedDevice = Map<String, dynamic>.from(revertedDevices[revertIndex] as Map);
+        final revertedDevice = Map<String, dynamic>.from(
+          revertedDevices[revertIndex] as Map,
+        );
         revertedDevice['state'] = previousState;
         revertedDevices[revertIndex] = revertedDevice;
         setState(() => _esp32Devices = {'devices': revertedDevices});
@@ -3411,11 +3400,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
   }
 
   Future<void> _setRoomDevices(List<dynamic> devices, bool state) async {
-    final targets = devices.whereType<Map>().where((device) {
-      final id = device['id']?.toString() ?? '';
-      final currentState = device['state'] as bool? ?? false;
-      return id.isNotEmpty && currentState != state;
-    }).toList(growable: false);
+    final targets = devices
+        .whereType<Map>()
+        .where((device) {
+          final id = device['id']?.toString() ?? '';
+          final currentState = device['state'] as bool? ?? false;
+          return id.isNotEmpty && currentState != state;
+        })
+        .toList(growable: false);
 
     for (final device in targets) {
       await _controlDevice(device['id'].toString(), state);
@@ -3438,16 +3430,16 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
       child: widget.dataAsync.when(
         data: (data) {
           final sensors = (data['sensors'] as Map?) ?? {};
-          final temp = (sensors['temperature'] ?? 0.0).toDouble();
-          final hum = (sensors['humidity'] ?? 0.0).toDouble();
+          final temp = (sensors['temperature'] as num?)?.toDouble();
+          final hum = (sensors['humidity'] as num?)?.toDouble();
           final flame = sensors['flame'] == true;
           final status = (data['status'] as Map?) ?? {};
           final online = status['online'] ?? false;
-          final ip = status['ip'] ?? '192.168.1.42';
-          final ping = status['ping'] ?? 12;
-          final rssi = status['rssi'] ?? -38;
+          final ip = status['ip']?.toString();
+          final ping = (status['ping'] as num?)?.toInt();
+          final rssi = (status['rssi'] as num?)?.toInt();
           final energy = (data['energy'] as Map?) ?? {};
-          final todayKw = (energy['today'] ?? 3.4).toDouble();
+          final todayKw = (energy['today'] as num?)?.toDouble();
 
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
@@ -3463,19 +3455,47 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
           final selectedRoom = _effectiveSelectedRoom(rooms);
           final roomDevices = selectedRoom.isEmpty
               ? <dynamic>[]
-              : devicesList.where((d) => d is Map && d['room'] == selectedRoom).toList();
+              : devicesList
+                    .where((d) => d is Map && d['room'] == selectedRoom)
+                    .toList();
 
           return SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + kToolbarHeight - 20,
+              top: 12,
               left: padding,
               right: padding,
-              bottom: isDesktop ? 40 : 100,
+              bottom: 24,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                HomeHero(
+                  title: 'Welcome home',
+                  height: 140,
+                  compact: true,
+                  subtitle: 'Your home, just the way you like it.',
+                  trailing: IconButton.filledTonal(
+                    tooltip: 'Settings',
+                    onPressed: () =>
+                        ref.read(selectedNavIndexProvider.notifier).state = 3,
+                    icon: const Icon(Icons.settings_outlined),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                HomeScenes(
+                  scope:
+                      ref
+                          .read(authServiceProvider)
+                          .asData
+                          ?.value
+                          .currentUser
+                          ?.uid ??
+                      'local',
+                  devices: devicesList,
+                  onToggle: _controlDevice,
+                ),
+                const SizedBox(height: 16),
                 _EspBar(
                   online: online,
                   ip: ip,
@@ -3515,7 +3535,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                         Icon(
                           Icons.meeting_room_outlined,
                           size: 48,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.3),
                         ),
                         const SizedBox(height: 12),
                         Text(
@@ -3523,7 +3545,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.5),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -3531,7 +3555,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                           'Use the Room button above to create your first room.',
                           style: TextStyle(
                             fontSize: 14,
-                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.3),
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -3545,6 +3571,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                     onToggle: _controlDevice,
                     onOptions: _showDeviceOptions,
                     onSetAll: (state) => _setRoomDevices(roomDevices, state),
+                    pendingIds: _togglingDeviceIds,
                   ),
               ],
             ),
@@ -3555,25 +3582,36 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
           child: Padding(
             padding: EdgeInsets.all(padding),
             child: _GCard(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.error_outline_rounded, size: 48, color: _DT.red),
-                const SizedBox(height: 16),
-                Text(
-                  'Something went wrong',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  err.toString(),
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.error_outline_rounded,
+                    size: 48,
+                    color: _DT.red,
                   ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 20),
-                _PillBtn(label: 'Try Again', onTap: _refreshDevices),
-              ]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Something went wrong',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    err.toString(),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.5),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  _PillBtn(label: 'Try Again', onTap: _refreshDevices),
+                ],
+              ),
             ),
           ),
         ),
@@ -3585,175 +3623,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
 // ────────────────────────────────────────────────────────────
 // 19. DYNAMIC DEVICE CARD
 // ────────────────────────────────────────────────────────────
-class _DynamicDeviceCard extends StatelessWidget {
-  final String name;
-  final int type;
-  final bool state;
-  final String moduleId;
-  final int channel;
-  final String room;
-
-  const _DynamicDeviceCard({
-    required this.name,
-    required this.type,
-    required this.state,
-    required this.moduleId,
-    required this.channel,
-    required this.room,
-  });
-
-  IconData _getIcon() {
-    switch (type) {
-      case 0: return Icons.lightbulb_rounded;
-      case 1: return Icons.air_rounded;
-      case 2: return Icons.power_settings_new_rounded;
-      case 3: return Icons.electrical_services_rounded;
-      default: return Icons.devices_rounded;
-    }
-  }
-
-  Color _getColor() {
-    return state ? _DT.amber : Colors.grey;
-  }
-
-  String _getStatus() {
-    return state ? 'On' : 'Off';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final color = _getColor();
-
-    return RepaintBoundary(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          color: state
-              ? (isDark
-              ? color.withValues(alpha: 0.12)
-              : color.withValues(alpha: 0.08))
-              : (isDark
-              ? Colors.white.withValues(alpha: 0.05)
-              : Colors.black.withValues(alpha: 0.04)),
-          border: Border.all(
-            color: state
-                ? color.withValues(alpha: 0.35)
-                : (isDark
-                ? Colors.white.withValues(alpha: 0.08)
-                : Colors.black.withValues(alpha: 0.07)),
-            width: 1,
-          ),
-          boxShadow: state
-              ? [
-            BoxShadow(
-              color: color.withValues(alpha: 0.15),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-            )
-          ]
-              : null,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(11),
-                    color: color.withValues(alpha: 0.18),
-                  ),
-                  child: Icon(
-                    _getIcon(),
-                    color: color,
-                    size: 20,
-                  ),
-                ),
-                Container(
-                  width: 40,
-                  height: 24,
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: state
-                        ? color.withValues(alpha: 0.25)
-                        : Colors.white.withValues(alpha: 0.1),
-                    border: Border.all(
-                      color: state
-                          ? color.withValues(alpha: 0.6)
-                          : Colors.white.withValues(alpha: 0.15),
-                      width: 0.8,
-                    ),
-                  ),
-                  child: AnimatedAlign(
-                    duration: const Duration(milliseconds: 220),
-                    alignment: state ? Alignment.centerRight : Alignment.centerLeft,
-                    child: Container(
-                      width: 18,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: state ? color : Colors.white.withValues(alpha: 0.5),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.2),
-                            blurRadius: 3,
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 28),
-            Text(
-              name,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                height: 1.2,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 3),
-            Text(
-              channel >= 0
-                  ? '${_getStatus()} • $moduleId/P$channel / Relay ${channel + 1}'
-                  : '${_getStatus()} • Output not assigned',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: state ? color : Colors.grey,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ────────────────────────────────────────────────────────────
-// 20. ESP CONNECTION BAR
-// ────────────────────────────────────────────────────────────
 class _EspBar extends StatelessWidget {
-  final bool online;
-  final String ip;
-  final int ping;
-  final int rssi;
-  final BleStatus bleStatus;
-  final VoidCallback onConnectBLE;
-
   const _EspBar({
     required this.online,
     required this.ip,
@@ -3762,234 +3632,68 @@ class _EspBar extends StatelessWidget {
     required this.bleStatus,
     required this.onConnectBLE,
   });
-
-  bool get _bleConnected =>
-      bleStatus == BleStatus.connected || bleStatus == BleStatus.dataUpdated;
-
-  bool get _bleBusy =>
-      bleStatus == BleStatus.scanning || bleStatus == BleStatus.connecting;
-
-  String get _bleStatusLabel {
-    switch (bleStatus) {
-      case BleStatus.disconnected:
-        return 'BLE disconnected';
-      case BleStatus.scanning:
-        return 'Scanning BLE';
-      case BleStatus.notFound:
-        return 'ESP32 not found';
-      case BleStatus.connecting:
-        return 'Connecting BLE';
-      case BleStatus.connected:
-      case BleStatus.dataUpdated:
-        return 'BLE connected';
-      case BleStatus.adapterOff:
-        return 'Bluetooth off';
-      case BleStatus.error:
-        return 'BLE error';
-    }
-  }
-
-  String get _controlPath {
-    if (_bleConnected) return 'Bluetooth backup active';
-    if (online) return 'Wi-Fi / Firebase active';
-    return 'Offline - connect Bluetooth backup';
-  }
-
+  final bool online;
+  final String? ip;
+  final int? ping, rssi;
+  final BleStatus bleStatus;
+  final VoidCallback onConnectBLE;
   @override
   Widget build(BuildContext context) {
-    final wifiDotColor = online ? _DT.espConnected : _DT.red;
-    final bleDotColor = _bleConnected
-        ? _DT.blue
-        : _bleBusy
-        ? _DT.amber
-        : Colors.grey;
-    final surfaceText = Theme.of(context).colorScheme.onSurface;
-
-    return _GCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+    final connected =
+        bleStatus == BleStatus.connected || bleStatus == BleStatus.dataUpdated;
+    final busy =
+        bleStatus == BleStatus.scanning || bleStatus == BleStatus.connecting;
+    return HomeCard(
+      padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(
-                _bleConnected
-                    ? Icons.bluetooth_connected_rounded
-                    : online
-                    ? Icons.wifi_rounded
-                    : Icons.cloud_off_rounded,
-                size: 18,
-                color: _bleConnected
-                    ? _DT.blue
-                    : online
-                    ? _DT.espConnected
-                    : _DT.red,
+              HomeGlowIcon(
+                Icons.memory_rounded,
+                color: online ? _DT.green : _DT.amber,
+                size: 36,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  _controlPath,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
+                  online ? 'ESP32 online' : 'ESP32 offline',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
-              if (!_bleConnected)
-                TextButton.icon(
-                  onPressed: _bleBusy ? null : onConnectBLE,
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                  icon: _bleBusy
-                      ? const SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                      : const Icon(Icons.bluetooth_searching_rounded, size: 16),
-                  label: Text(_bleBusy ? 'Connecting' : 'BLE'),
+              TextButton.icon(
+                onPressed: connected || busy ? null : onConnectBLE,
+                icon: const Icon(Icons.bluetooth, size: 16),
+                label: Text(
+                  connected
+                      ? 'BLE connected'
+                      : busy
+                      ? 'Connecting…'
+                      : 'Connect BLE',
+                  style: const TextStyle(fontSize: 11),
                 ),
+              ),
             ],
           ),
-          const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _StatusPill(
-                  label: online ? 'ESP online' : 'ESP offline',
-                  icon: online ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
-                  color: wifiDotColor,
-                ),
-                const SizedBox(width: 6),
-                _StatusPill(
-                  label: _bleConnected ? 'BLE connected' : _bleStatusLabel,
-                  icon: _bleConnected
-                      ? Icons.bluetooth_connected_rounded
-                      : Icons.bluetooth_disabled_rounded,
-                  color: bleDotColor,
-                ),
-                const SizedBox(width: 6),
-                _MiniChip(label: ip, icon: Icons.settings_ethernet_rounded),
-                const SizedBox(width: 6),
-                _MiniChip(label: '${ping}ms', icon: Icons.timer_outlined),
-                const SizedBox(width: 6),
-                Row(children: [
-                  Icon(Icons.wifi,
-                      size: 14,
-                      color: online ? _DT.espConnected : Colors.grey.shade600),
-                  const SizedBox(width: 3),
-                  Text('${rssi}dBm',
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: online
-                              ? _DT.espConnected
-                              : Colors.grey.shade500)),
-                ]),
-              ],
-            ),
-          ),
-          if (!online && !_bleConnected) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Internet is unavailable. Connect Bluetooth to control nearby devices.',
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.25,
-                color: surfaceText.withValues(alpha: 0.55),
+          const Divider(height: 20),
+          Wrap(
+            spacing: 14,
+            runSpacing: 8,
+            children: [
+              Text('IP  ${ip ?? '—'}', style: const TextStyle(fontSize: 11)),
+              Text(
+                'Signal  ${rssi == null ? '—' : '$rssi dBm'}',
+                style: const TextStyle(fontSize: 11),
               ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusPill extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
-
-  const _StatusPill({
-    required this.label,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        color: color.withValues(alpha: 0.13),
-        border: Border.all(color: color.withValues(alpha: 0.28), width: 0.8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color,
-              boxShadow: [BoxShadow(color: color.withValues(alpha: 0.45), blurRadius: 5)],
-            ),
-          ),
-          const SizedBox(width: 5),
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: color,
-            ),
+              Text(
+                'Ping  ${ping == null ? '—' : '$ping ms'}',
+                style: const TextStyle(fontSize: 11),
+              ),
+            ],
           ),
         ],
       ),
-    );
-  }
-}
-class _MiniChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  const _MiniChip({required this.label, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.07)
-            : Colors.black.withValues(alpha: 0.05),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.1)
-              : Colors.black.withValues(alpha: 0.07),
-          width: 0.5,
-        ),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 11, color: Colors.grey),
-        const SizedBox(width: 3),
-        Text(label,
-            style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey)),
-      ]),
     );
   }
 }
@@ -3998,9 +3702,9 @@ class _MiniChip extends StatelessWidget {
 // 21. STATS ROW
 // ────────────────────────────────────────────────────────────
 class _StatsRow extends StatelessWidget {
-  final double temp;
-  final double hum;
-  final double todayKw;
+  final double? temp;
+  final double? hum;
+  final double? todayKw;
 
   const _StatsRow({
     required this.temp,
@@ -4010,81 +3714,91 @@ class _StatsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(children: [
-      Expanded(child: _StatTile(
-        icon: Icons.thermostat_rounded,
-        iconColor: const Color(0xFFFF6B6B),
-        value: '${temp.toStringAsFixed(1)}°',
-        label: 'Temp',
-      )),
-      const SizedBox(width: 10),
-      Expanded(child: _StatTile(
-        icon: Icons.water_drop_rounded,
-        iconColor: _DT.blue,
-        value: '${hum.toStringAsFixed(0)}%',
-        label: 'Humid',
-      )),
-      const SizedBox(width: 10),
-      Expanded(child: _StatTile(
-        icon: Icons.bolt_rounded,
-        iconColor: _DT.amber,
-        value: '${todayKw.toStringAsFixed(1)}kW',
-        label: 'Today',
-      )),
-    ]);
+    return Row(
+      children: [
+        Expanded(
+          child: _StatTile(
+            icon: Icons.thermostat_rounded,
+            iconColor: const Color(0xFFFF6B6B),
+            value: temp == null ? '—' : '${temp!.toStringAsFixed(1)}°',
+            label: 'Temp',
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _StatTile(
+            icon: Icons.water_drop_rounded,
+            iconColor: _DT.blue,
+            value: hum == null ? '—' : '${hum!.toStringAsFixed(0)}%',
+            label: 'Humid',
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _StatTile(
+            icon: Icons.bolt_rounded,
+            iconColor: _DT.amber,
+            value: todayKw == null ? '—' : '${todayKw!.toStringAsFixed(1)} kWh',
+            label: 'Today',
+          ),
+        ),
+      ],
+    );
   }
 }
 
 class _StatTile extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String value;
-  final String label;
-
   const _StatTile({
     required this.icon,
     required this.iconColor,
     required this.value,
     required this.label,
   });
-
+  final IconData icon;
+  final Color iconColor;
+  final String value, label;
   @override
   Widget build(BuildContext context) {
-    return _GCard(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-      child: Column(children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            color: iconColor.withValues(alpha: 0.15),
+    final text = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
-          child: Icon(icon, color: iconColor, size: 18),
         ),
-        const SizedBox(height: 8),
-        Text(value,
-            style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5)),
-        const SizedBox(height: 2),
-        Text(label,
-            style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.5))),
-      ]),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+        ),
+      ],
+    );
+    return HomeCard(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+      child: MediaQuery.textScalerOf(context).scale(1) > 1.3
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: iconColor, size: 20),
+                const SizedBox(height: 6),
+                text,
+              ],
+            )
+          : Row(
+              children: [
+                Icon(icon, color: iconColor, size: 19),
+                const SizedBox(width: 7),
+                Expanded(child: text),
+              ],
+            ),
     );
   }
 }
 
-// ────────────────────────────────────────────────────────────
-// 22. FLAME BANNER
-// ────────────────────────────────────────────────────────────
 class _FlameBanner extends StatelessWidget {
   final bool flame;
   const _FlameBanner({required this.flame});
@@ -4096,53 +3810,61 @@ class _FlameBanner extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       glowColor: color,
       dangerBorder: flame,
-      child: Row(children: [
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            color: color.withValues(alpha: 0.15),
-          ),
-          child: Icon(
-            flame
-                ? Icons.local_fire_department_rounded
-                : Icons.shield_rounded,
-            color: color,
-            size: 22,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              flame ? '⚠️ FLAME DETECTED' : 'All Clear',
-              style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: color,
-                  letterSpacing: -0.2),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: color.withValues(alpha: 0.15),
             ),
-            const SizedBox(height: 2),
-            Text(
+            child: Icon(
               flame
-                  ? 'Immediate action required'
-                  : 'Flame Sensor • No alerts detected',
-              style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.5)),
+                  ? Icons.local_fire_department_rounded
+                  : Icons.shield_rounded,
+              color: color,
+              size: 22,
             ),
-          ],
-        )),
-        Icon(Icons.chevron_right_rounded,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  flame ? '⚠️ FLAME DETECTED' : 'All Clear',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  flame
+                      ? 'Immediate action required'
+                      : 'Flame Sensor • No alerts detected',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right_rounded,
             size: 18,
-            color:
-            Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3)),
-      ]),
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.3),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -4214,10 +3936,8 @@ class _RoomGallery extends ConsumerWidget {
   Future<void> _manageRooms(BuildContext context) async {
     await showDialog<void>(
       context: context,
-      builder: (context) => _RoomManagementDialog(
-        rooms: rooms,
-        onRoomsUpdated: (_) {},
-      ),
+      builder: (context) =>
+          _RoomManagementDialog(rooms: rooms, onRoomsUpdated: (_) {}),
     );
   }
 
@@ -4258,7 +3978,10 @@ class _RoomGallery extends ConsumerWidget {
               const SizedBox(height: 16),
               Text(
                 'Change $room photo',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               const SizedBox(height: 12),
               ListTile(
@@ -4290,7 +4013,9 @@ class _RoomGallery extends ConsumerWidget {
       return;
     }
 
-    final source = action == 'camera' ? ImageSource.camera : ImageSource.gallery;
+    final source = action == 'camera'
+        ? ImageSource.camera
+        : ImageSource.gallery;
     try {
       final picked = await ImagePicker().pickImage(
         source: source,
@@ -4324,9 +4049,6 @@ class _RoomGallery extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final width = MediaQuery.sizeOf(context).width;
-    final cardWidth = width >= 1200 ? 224.0 : width >= 600 ? 210.0 : 204.0;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -4364,44 +4086,59 @@ class _RoomGallery extends ConsumerWidget {
         ),
         if (rooms.isNotEmpty) ...[
           const SizedBox(height: 14),
-          SizedBox(
-            height: 236,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              clipBehavior: Clip.none,
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              itemCount: rooms.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemBuilder: (context, index) {
-                final room = rooms[index];
-                final roomDevices = devices
-                    .where((device) =>
-                        device is Map && device['room']?.toString() == room)
-                    .toList(growable: false);
-                final activeCount = roomDevices
-                    .where((device) =>
-                        device is Map && (device['state'] as bool? ?? false))
-                    .length;
-                final customPhoto =
-                    ref.watch(roomImageProvider(room)).asData?.value;
-                return SizedBox(
-                  width: cardWidth,
-                  child: _RoomCard(
-                    room: room,
-                    deviceCount: roomDevices.length,
-                    activeCount: activeCount,
-                    selected: room == selectedRoom,
-                    imageBytes: customPhoto,
-                    onChangeImage: () =>
-                        unawaited(_changeRoomPhoto(context, ref, room)),
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      onRoomSelected(room);
-                    },
-                  ),
-                );
-              },
-            ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final scale = MediaQuery.textScalerOf(
+                context,
+              ).scale(1).clamp(1.0, 2.0);
+              final columns = constraints.maxWidth < 340 || scale > 1.3
+                  ? 1
+                  : constraints.maxWidth >= 900
+                  ? 4
+                  : constraints.maxWidth >= 650
+                  ? 3
+                  : 2;
+              final cardWidth =
+                  (constraints.maxWidth - 12 * (columns - 1)) / columns;
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final room in rooms)
+                    SizedBox(
+                      width: cardWidth,
+                      height: 132 + (scale - 1) * 64,
+                      child: RoomPhotoCard(
+                        room: room,
+                        deviceCount: devices
+                            .where((d) => d is Map && d['room'] == room)
+                            .length,
+                        activeCount: devices
+                            .where(
+                              (d) =>
+                                  d is Map &&
+                                  d['room'] == room &&
+                                  d['state'] == true,
+                            )
+                            .length,
+                        selected: room == selectedRoom,
+                        imageBytes: ref
+                            .watch(roomImageProvider(room))
+                            .asData
+                            ?.value,
+                        imageAlignment: _roomArtAlignment(room),
+                        icon: _roomIconFor(room),
+                        onChangeImage: () =>
+                            unawaited(_changeRoomPhoto(context, ref, room)),
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          onRoomSelected(room);
+                        },
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ],
       ],
@@ -4409,202 +4146,18 @@ class _RoomGallery extends ConsumerWidget {
   }
 }
 
-class _RoomCard extends StatelessWidget {
-  final String room;
-  final int deviceCount;
-  final int activeCount;
-  final bool selected;
-  final VoidCallback onTap;
-  final VoidCallback onChangeImage;
-  final Uint8List? imageBytes;
-
-  const _RoomCard({
-    required this.room,
-    required this.deviceCount,
-    required this.activeCount,
-    required this.selected,
-    required this.onTap,
-    required this.onChangeImage,
-    required this.imageBytes,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = _roomAccentFor(room);
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: '$room, $deviceCount devices, $activeCount on',
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 240),
-          curve: Curves.easeOutCubic,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: selected
-                  ? accent.withValues(alpha: 0.95)
-                  : Colors.white.withValues(alpha: 0.10),
-              width: selected ? 2 : 1,
-            ),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: accent.withValues(alpha: 0.32),
-                      blurRadius: 22,
-                      spreadRadius: 1,
-                    ),
-                  ]
-                : const [],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(22),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                imageBytes == null
-                    ? Image.asset(
-                        _roomArtAsset,
-                        fit: BoxFit.cover,
-                        alignment: _roomArtAlignment(room),
-                        filterQuality: FilterQuality.high,
-                      )
-                    : Image.memory(
-                        imageBytes!,
-                        fit: BoxFit.cover,
-                        alignment: Alignment.center,
-                        filterQuality: FilterQuality.high,
-                        gaplessPlayback: true,
-                      ),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        accent.withValues(alpha: selected ? 0.12 : 0.04),
-                        const Color(0x22050812),
-                        const Color(0xE8050812),
-                      ],
-                      stops: const [0, 0.42, 1],
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 14,
-                  left: 14,
-                  child: Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: selected
-                          ? accent.withValues(alpha: 0.88)
-                          : Colors.black.withValues(alpha: 0.42),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.24),
-                      ),
-                    ),
-                    child: Icon(
-                      _roomIconFor(room),
-                      color: Colors.white,
-                      size: 23,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: IconButton.filledTonal(
-                    tooltip: 'Change room photo',
-                    onPressed: onChangeImage,
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.black.withValues(alpha: 0.48),
-                      foregroundColor: Colors.white,
-                    ),
-                    icon: const Icon(Icons.photo_camera_back_rounded, size: 19),
-                  ),
-                ),
-                Positioned(
-                  left: 16,
-                  right: 14,
-                  bottom: 14,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        room,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '$deviceCount ${deviceCount == 1 ? 'device' : 'devices'}',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.72),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                          if (activeCount > 0)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _DT.green.withValues(alpha: 0.16),
-                                borderRadius: BorderRadius.circular(99),
-                                border: Border.all(
-                                  color: _DT.green.withValues(alpha: 0.35),
-                                ),
-                              ),
-                              child: Text(
-                                '$activeCount on',
-                                style: const TextStyle(
-                                  color: _DT.green,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _FocusedRoomPanel extends ConsumerWidget {
   final String room;
+  final Set<String> pendingIds;
   final List<dynamic> devices;
   final Future<void> Function(String id, bool state) onToggle;
-  final void Function(
-    String id,
-    String name,
-    String moduleId,
-    int channel,
-  ) onOptions;
+  final void Function(String id, String name, String moduleId, int channel)
+  onOptions;
   final Future<void> Function(bool state) onSetAll;
 
   const _FocusedRoomPanel({
     required this.room,
+    required this.pendingIds,
     required this.devices,
     required this.onToggle,
     required this.onOptions,
@@ -4612,166 +4165,62 @@ class _FocusedRoomPanel extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final wide = MediaQuery.sizeOf(context).width >= 900;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = isDark
-        ? const Color(0xFF0C1222).withValues(alpha: 0.94)
-        : Colors.white.withValues(alpha: 0.92);
-
-    final panel = Container(
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.10)
-              : Colors.black.withValues(alpha: 0.08),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.30 : 0.10),
-            blurRadius: 30,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(29),
-        child: wide
-            ? IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(flex: 6, child: _buildHero(context, 390, ref)),
-                    Expanded(flex: 5, child: _buildDevices(context)),
-                  ],
-                ),
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildHero(context, 310, ref),
-                  _buildDevices(context),
-                ],
-              ),
-      ),
-    );
-
-    return RepaintBoundary(child: panel);
-  }
-
-  Widget _buildHero(BuildContext context, double minimumHeight, WidgetRef ref) {
-    final accent = _roomAccentFor(room);
-    final activeCount = devices
-        .where((device) => device is Map && (device['state'] as bool? ?? false))
-        .length;
-
-    final customPhoto = ref.watch(roomImageProvider(room)).asData?.value;
-    return Container(
-      width: double.infinity,
-      height: minimumHeight,
-      decoration: BoxDecoration(
-        image: DecorationImage(
-          image: customPhoto == null
-              ? const AssetImage(_roomArtAsset)
-              : MemoryImage(customPhoto),
-          fit: BoxFit.cover,
-          alignment: _roomArtAlignment(room),
-        ),
-      ),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              accent.withValues(alpha: 0.08),
-              const Color(0x33050711),
-              const Color(0xEE050711),
-            ],
-            stops: const [0, 0.42, 1],
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(26),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.end,
+  Widget build(BuildContext context, WidgetRef ref) => HomeCard(
+    padding: EdgeInsets.zero,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: Row(
             children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: accent.withValues(alpha: 0.86),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.25),
+              HomeGlowIcon(_roomIconFor(room), size: 36),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '$room controls',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-                child: Icon(_roomIconFor(room), color: Colors.white, size: 25),
-              ),
-              const Spacer(),
-              Text(
-                room,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 31,
-                  height: 1.05,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '${devices.length} ${devices.length == 1 ? 'device' : 'devices'}  •  $activeCount on',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.72),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                'Quick actions',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  _RoomActionButton(
-                    icon: Icons.power_rounded,
-                    label: 'All on',
-                    emphasized: true,
-                    onTap: () => unawaited(onSetAll(true)),
-                  ),
-                  _RoomActionButton(
-                    icon: Icons.power_off_rounded,
-                    label: 'All off',
-                    onTap: () => unawaited(onSetAll(false)),
-                  ),
-                ],
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Wrap(
+            spacing: 8,
+            children: [
+              TextButton.icon(
+                onPressed: devices.isEmpty || pendingIds.isNotEmpty
+                    ? null
+                    : () => unawaited(onSetAll(true)),
+                icon: const Icon(Icons.power_rounded, size: 16),
+                label: const Text('All on'),
+              ),
+              TextButton.icon(
+                onPressed: devices.isEmpty || pendingIds.isNotEmpty
+                    ? null
+                    : () => unawaited(onSetAll(false)),
+                icon: const Icon(Icons.power_off_rounded, size: 16),
+                label: const Text('All off'),
+              ),
+            ],
+          ),
+        ),
+        _buildDevices(context),
+      ],
+    ),
+  );
 
   Widget _buildDevices(BuildContext context) {
     final activeCount = devices
         .where((device) => device is Map && (device['state'] as bool? ?? false))
         .length;
     return Padding(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -4804,10 +4253,9 @@ class _FocusedRoomPanel extends ConsumerWidget {
                     Icon(
                       Icons.devices_other_rounded,
                       size: 42,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.25),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.25),
                     ),
                     const SizedBox(height: 10),
                     const Text(
@@ -4819,76 +4267,51 @@ class _FocusedRoomPanel extends ConsumerWidget {
               ),
             )
           else
-            for (var index = 0; index < devices.length; index++) ...[
-              _RoomDeviceRow(
-                device: Map<String, dynamic>.from(devices[index] as Map),
-                onToggle: onToggle,
-                onOptions: onOptions,
-              ),
-              if (index != devices.length - 1) const _SDivider(),
-            ],
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final columns =
+                    constraints.maxWidth < 310 ||
+                        MediaQuery.textScalerOf(context).scale(1) > 1.3
+                    ? 1
+                    : 2;
+                return Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final device in devices.whereType<Map>())
+                      SizedBox(
+                        width:
+                            (constraints.maxWidth - 10 * (columns - 1)) /
+                            columns,
+                        child: _RoomDeviceRow(
+                          device: Map<String, dynamic>.from(device),
+                          pending: pendingIds.contains(
+                            device['id']?.toString(),
+                          ),
+                          onToggle: onToggle,
+                          onOptions: onOptions,
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
         ],
       ),
     );
   }
 }
 
-class _RoomActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool emphasized;
-  final VoidCallback onTap;
-
-  const _RoomActionButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.emphasized = false,
-  });
-
-  @override
-  Widget build(BuildContext context) => Material(
-        color: emphasized
-            ? _DT.purple
-            : Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: Colors.white, size: 19),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-}
-
 class _RoomDeviceRow extends StatelessWidget {
   final Map<String, dynamic> device;
+  final bool pending;
   final Future<void> Function(String id, bool state) onToggle;
-  final void Function(
-    String id,
-    String name,
-    String moduleId,
-    int channel,
-  ) onOptions;
+  final void Function(String id, String name, String moduleId, int channel)
+  onOptions;
 
   const _RoomDeviceRow({
     required this.device,
+    this.pending = false,
     required this.onToggle,
     required this.onOptions,
   });
@@ -4914,8 +4337,8 @@ class _RoomDeviceRow extends StatelessWidget {
     final id = device['id']?.toString() ?? '';
     final type = device['type'] is num ? (device['type'] as num).toInt() : 0;
     final state = device['state'] as bool? ?? false;
-    final moduleId =
-        (device['moduleId'] ?? device['expanderId'] ?? 'io_1').toString();
+    final moduleId = (device['moduleId'] ?? device['expanderId'] ?? 'io_1')
+        .toString();
     final rawChannel = device['channel'];
     final channel = rawChannel is num
         ? rawChannel.toInt()
@@ -4926,66 +4349,65 @@ class _RoomDeviceRow extends StatelessWidget {
       if (id.isNotEmpty) onOptions(id, name, moduleId, channel);
     }
 
-    return InkWell(
-      onLongPress: showOptions,
-      borderRadius: BorderRadius.circular(16),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                color: color.withValues(alpha: state ? 0.18 : 0.10),
-                border: Border.all(color: color.withValues(alpha: 0.18)),
+    return HomeCard(
+      padding: const EdgeInsets.all(12),
+      glowColor: state ? HomeDesign.blue : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              HomeGlowIcon(_iconFor(type), color: color, size: 32),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Edit $name',
+                onPressed: id.isEmpty ? null : showOptions,
+                icon: const Icon(Icons.more_horiz, size: 18),
               ),
-              child: Icon(_iconFor(type), color: color, size: 23),
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
+            ],
+          ),
+          Text(
+            name,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  pending
+                      ? 'Updating…'
+                      : state
+                      ? 'On'
+                      : 'Off',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    channel >= 0
-                        ? '${state ? 'On' : 'Off'}  •  Relay ${channel + 1}'
-                        : '${state ? 'On' : 'Off'}  •  Output not assigned',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: state ? color : Colors.grey,
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-            IconButton(
-              tooltip: 'Device settings',
-              onPressed: id.isEmpty ? null : showOptions,
-              icon: const Icon(Icons.more_horiz_rounded, size: 20),
-              visualDensity: VisualDensity.compact,
-            ),
-            Switch.adaptive(
-              value: state,
-              activeTrackColor: _DT.purple,
-              onChanged: id.isEmpty
-                  ? null
-                  : (value) => unawaited(onToggle(id, value)),
-            ),
-          ],
-        ),
+              if (pending)
+                const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else
+                Switch(
+                  value: state,
+                  activeTrackColor: HomeDesign.blue,
+                  onChanged:
+                      id.isEmpty || device['enabled'] == false || channel < 0
+                      ? null
+                      : (value) => unawaited(onToggle(id, value)),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -5012,16 +4434,8 @@ class _OptionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(
-        icon,
-        color: iconColor ?? _DT.purple,
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
-        ),
-      ),
+      leading: Icon(icon, color: iconColor ?? _DT.purple),
+      title: Text(title, style: TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(subtitle),
       trailing: Icon(
         Icons.chevron_right_rounded,
@@ -5051,58 +4465,11 @@ class _GCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return ClipRRect(
-      borderRadius: borderRadius,
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            borderRadius: borderRadius,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? [
-                Colors.white.withValues(alpha: 0.08),
-                Colors.white.withValues(alpha: 0.03)
-              ]
-                  : [
-                Colors.white.withValues(alpha: 0.6),
-                Colors.white.withValues(alpha: 0.3)
-              ],
-            ),
-            border: Border.all(
-              color: dangerBorder
-                  ? _DT.red.withValues(alpha: 0.45)
-                  : (isDark
-                  ? Colors.white.withValues(alpha: 0.1)
-                  : Colors.white.withValues(alpha: 0.4)),
-              width: 0.8,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: isDark
-                    ? Colors.black.withValues(alpha: 0.3)
-                    : Colors.black.withValues(alpha: 0.05),
-                blurRadius: 20,
-                offset: const Offset(0, 6),
-              ),
-              if (glowColor != null)
-                BoxShadow(
-                  color: glowColor!.withValues(alpha: isDark ? 0.18 : 0.12),
-                  blurRadius: 24,
-                ),
-            ],
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => HomeCard(
+    padding: padding,
+    glowColor: dangerBorder ? Theme.of(context).colorScheme.error : glowColor,
+    child: child,
+  );
 }
 
 // ────────────────────────────────────────────────────────────
@@ -5120,19 +4487,19 @@ class _PillBtn extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(40),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF8B7FFF), _DT.purple],
-        ),
+        gradient: const LinearGradient(colors: [Color(0xFF8B7FFF), _DT.purple]),
         boxShadow: [
-          BoxShadow(
-              color: _DT.purple.withValues(alpha: 0.35), blurRadius: 14),
+          BoxShadow(color: _DT.purple.withValues(alpha: 0.35), blurRadius: 14),
         ],
       ),
-      child: Text(label,
-          style: const TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w600)),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     ),
   );
 }
@@ -5140,546 +4507,89 @@ class _PillBtn extends StatelessWidget {
 // ────────────────────────────────────────────────────────────
 // 27. GLASS BOTTOM NAV
 // ────────────────────────────────────────────────────────────
-class _GlassBottomNav extends StatelessWidget {
-  final int selectedIndex;
-  final ValueChanged<int> onTap;
 
-  const _GlassBottomNav({
-    required this.selectedIndex,
-    required this.onTap,
-  });
-
-  static const _items = [
-    (Icons.home_rounded, 'Home'),
-    (Icons.bolt_rounded, 'Energy'),
-    (Icons.notifications_rounded, 'Alerts'),
-    (Icons.settings_rounded, 'Settings'),
-  ];
-
-  void _handleTap(int index) {
-    if (index == selectedIndex) return;
-    HapticFeedback.selectionClick();
-    onTap(index);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Container(
-      height: 68,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(34),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.12),
-            blurRadius: 32,
-            offset: const Offset(0, 8),
-          ),
-          BoxShadow(
-            color: _DT.purple.withValues(alpha: isDark ? 0.08 : 0.05),
-            blurRadius: 20,
-            spreadRadius: 1,
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(34),
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(34),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? [
-                  Colors.white.withValues(alpha: 0.13),
-                  Colors.white.withValues(alpha: 0.07),
-                ]
-                    : [
-                  Colors.white.withValues(alpha: 0.72),
-                  Colors.white.withValues(alpha: 0.48),
-                ],
-              ),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.15)
-                    : Colors.white.withValues(alpha: 0.6),
-                width: 0.8,
-              ),
-            ),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final tabWidth = constraints.maxWidth / _items.length;
-                final activeIndex = selectedIndex.clamp(0, _items.length - 1);
-
-                return Stack(
-                  children: [
-                    AnimatedPositioned(
-                      duration: const Duration(milliseconds: 240),
-                      curve: Curves.easeOutCubic,
-                      top: 8,
-                      bottom: 8,
-                      left: activeIndex * tabWidth + 6,
-                      width: tabWidth - 12,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(26),
-                        child: BackdropFilter(
-                          filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(26),
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: isDark
-                                    ? [
-                                  _DT.purple.withValues(alpha: 0.38),
-                                  _DT.purple.withValues(alpha: 0.20),
-                                ]
-                                    : [
-                                  _DT.purple.withValues(alpha: 0.20),
-                                  _DT.purple.withValues(alpha: 0.10),
-                                ],
-                              ),
-                              border: Border.all(
-                                color: _DT.purple.withValues(alpha: isDark ? 0.50 : 0.30),
-                                width: 0.8,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: _DT.purple.withValues(alpha: 0.28),
-                                  blurRadius: 14,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Row(
-                      children: _items.asMap().entries.map((entry) {
-                        final index = entry.key;
-                        final (icon, label) = entry.value;
-                        final isActive = activeIndex == index;
-
-                        return Expanded(
-                          child: Semantics(
-                            button: true,
-                            selected: isActive,
-                            label: label,
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () => _handleTap(index),
-                              child: SizedBox(
-                                height: 68,
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    AnimatedScale(
-                                      duration: const Duration(milliseconds: 180),
-                                      curve: Curves.easeOutCubic,
-                                      scale: isActive ? 1.06 : 1.0,
-                                      child: Icon(
-                                        icon,
-                                        size: isActive ? 24 : 21,
-                                        color: isActive
-                                            ? _DT.purple
-                                            : (isDark
-                                            ? Colors.white.withValues(alpha: 0.38)
-                                            : Colors.black.withValues(alpha: 0.28)),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 3),
-                                    AnimatedDefaultTextStyle(
-                                      duration: const Duration(milliseconds: 180),
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                                        color: isActive
-                                            ? _DT.purple
-                                            : (isDark
-                                            ? Colors.white.withValues(alpha: 0.38)
-                                            : Colors.black.withValues(alpha: 0.28)),
-                                      ),
-                                      child: Text(label, maxLines: 1),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LiquidSelectionLens extends StatelessWidget {
-  final bool isDark;
-  const _LiquidSelectionLens({required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(32),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(32),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? [
-                Colors.white.withValues(alpha: 0.26),
-                _DT.purple.withValues(alpha: 0.38),
-                Colors.white.withValues(alpha: 0.08),
-              ]
-                  : [
-                Colors.white.withValues(alpha: 0.92),
-                _DT.purple.withValues(alpha: 0.19),
-                Colors.white.withValues(alpha: 0.56),
-              ],
-            ),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: isDark ? 0.32 : 0.78),
-              width: 1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: _DT.purple.withValues(alpha: isDark ? 0.32 : 0.20),
-                blurRadius: 22,
-                offset: const Offset(0, 8),
-              ),
-              BoxShadow(
-                color: Colors.white.withValues(alpha: isDark ? 0.05 : 0.62),
-                blurRadius: 12,
-                offset: const Offset(-3, -4),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                left: 15,
-                right: 15,
-                top: 7,
-                height: 11,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(30),
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.white.withValues(alpha: isDark ? 0.23 : 0.78),
-                        Colors.white.withValues(alpha: 0.02),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 10,
-                right: 10,
-                bottom: 5,
-                height: 12,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(30),
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.white.withValues(alpha: 0.0),
-                        _DT.purple.withValues(alpha: isDark ? 0.18 : 0.12),
-                        Colors.white.withValues(alpha: 0.0),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LiquidGlassNavShinePainter extends CustomPainter {
-  final bool isDark;
-  const _LiquidGlassNavShinePainter({required this.isDark});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final highlight = Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(0, 0),
-        Offset(size.width, size.height),
-        [
-          Colors.white.withValues(alpha: isDark ? 0.10 : 0.36),
-          Colors.white.withValues(alpha: 0.00),
-          Colors.white.withValues(alpha: isDark ? 0.05 : 0.18),
-        ],
-        const [0.0, 0.50, 1.0],
-      );
-
-    final glow = Paint()
-      ..shader = ui.Gradient.radial(
-        Offset(size.width * 0.18, size.height * 0.10),
-        size.width * 0.50,
-        [
-          Colors.white.withValues(alpha: isDark ? 0.09 : 0.42),
-          Colors.white.withValues(alpha: 0.00),
-        ],
-      );
-
-    final purpleGlow = Paint()
-      ..shader = ui.Gradient.radial(
-        Offset(size.width * 0.82, size.height * 1.15),
-        size.width * 0.45,
-        [
-          _DT.purple.withValues(alpha: isDark ? 0.12 : 0.09),
-          _DT.purple.withValues(alpha: 0.00),
-        ],
-      );
-
-    final rrect = RRect.fromRectAndRadius(
-      Offset.zero & size,
-      const Radius.circular(38),
-    );
-    canvas.drawRRect(rrect, highlight);
-    canvas.drawCircle(Offset(size.width * 0.18, size.height * 0.12), size.width * 0.46, glow);
-    canvas.drawCircle(Offset(size.width * 0.82, size.height * 1.05), size.width * 0.42, purpleGlow);
-  }
-
-  @override
-  bool shouldRepaint(covariant _LiquidGlassNavShinePainter oldDelegate) {
-    return oldDelegate.isDark != isDark;
-  }
-}
-
-// ────────────────────────────────────────────────────────────
-// 28. ENERGY SCREEN
-// ────────────────────────────────────────────────────────────
-class _EnergyScreen extends StatelessWidget {
+class _EnergyScreen extends ConsumerWidget {
   const _EnergyScreen();
-
   @override
-  Widget build(BuildContext context) {
-    final padding = ResponsiveHelper.getPadding(context);
-    final isDesktop = ResponsiveHelper.isDesktop(context);
-
-    return SingleChildScrollView(
-      padding: EdgeInsets.only(
-        top: MediaQuery.of(context).padding.top + kToolbarHeight + 12,
-        left: padding,
-        right: padding,
-        bottom: isDesktop ? 40 : 100,
-      ),
-      child: Column(children: [
-        _GCard(
-          glowColor: _DT.purple,
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text("Today's Usage",
-                        style: TextStyle(
-                            fontSize: 17, fontWeight: FontWeight.w700)),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        color: _DT.purple.withValues(alpha: 0.15),
-                      ),
-                      child: const Text('⚡ Live',
-                          style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: _DT.purple)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Column(children: [
-                        Text('3.4',
-                            style: TextStyle(
-                                fontSize: 30,
-                                fontWeight: FontWeight.w800,
-                                color: Theme.of(context).colorScheme.primary)),
-                        Text('kWh',
-                            style: TextStyle(
-                                fontSize: 13,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withValues(alpha: 0.5))),
-                      ]),
-                      Container(
-                          width: 0.5,
-                          height: 50,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.15)),
-                      const Column(children: [
-                        Text('€2.15',
-                            style: TextStyle(
-                                fontSize: 30, fontWeight: FontWeight.w800)),
-                        Text('Cost',
-                            style:
-                            TextStyle(fontSize: 13, color: Colors.grey)),
-                      ]),
-                    ]),
-                const SizedBox(height: 20),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: LinearProgressIndicator(
-                    value: 0.45,
-                    minHeight: 6,
-                    backgroundColor: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.1),
-                    valueColor: AlwaysStoppedAnimation(
-                        Theme.of(context).colorScheme.primary),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Daily target',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.5))),
-                    Text('45%',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context).colorScheme.primary)),
-                  ],
-                ),
-              ]),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final data = ref.watch(httpDataProvider).asData?.value;
+    final energy = data?['energy'];
+    final today = energy is Map ? energy['today'] : null;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      children: [
+        const HomeHero(
+          title: 'Energy',
+          subtitle: 'A clearer view of your home’s energy.',
+          icon: Icons.bolt_outlined,
         ),
-        const SizedBox(height: 12),
-        _GCard(
-            child: Row(children: [
-              Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('This Week',
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6))),
-                  const SizedBox(height: 6),
-                  const Text('24.1 kWh',
-                      style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.8)),
-                  const SizedBox(height: 4),
-                  const Text('↓ 8% vs last week',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: _DT.green,
-                          fontWeight: FontWeight.w500)),
-                ],
-              )),
-              SizedBox(
-                width: 72,
-                height: 72,
-                child: CircularProgressIndicator(
-                  value: 0.62,
-                  strokeWidth: 7,
-                  backgroundColor: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.1),
-                  valueColor: AlwaysStoppedAnimation(
-                      Theme.of(context).colorScheme.primary),
-                  strokeCap: StrokeCap.round,
+        const HomeSection('ENERGY OVERVIEW'),
+        HomeCard(
+          glowColor: HomeDesign.blue,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Today’s usage',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                today is num ? '${today.toStringAsFixed(2)} kWh' : '— kWh',
+                style: const TextStyle(
+                  fontSize: 34,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-            ])),
-        const SizedBox(height: 12),
-        _GCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Top Devices',
-                    style:
-                    TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 16),
-                ...[
-                  (Icons.ac_unit_rounded, 'Living Room AC', '2.1 kWh', 0.62),
-                  (Icons.kitchen_rounded, 'Kitchen Fridge', '1.8 kWh', 0.53),
-                  (Icons.water_damage_rounded, 'Water Heater', '1.2 kWh', 0.35),
-                ].map((d) => Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: Column(children: [
-                    Row(children: [
-                      Icon(d.$1, size: 20, color: _DT.purple),
-                      const SizedBox(width: 10),
-                      Expanded(child: Text(d.$2,
-                          style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500))),
-                      Text(d.$3,
-                          style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700)),
-                    ]),
-                    const SizedBox(height: 7),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: LinearProgressIndicator(
-                        value: d.$4,
-                        minHeight: 4,
-                        backgroundColor: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.08),
-                        valueColor: AlwaysStoppedAnimation(
-                            Theme.of(context).colorScheme.primary),
-                      ),
-                    ),
-                  ]),
-                )),
-              ],
-            )),
-      ]),
+              const SizedBox(height: 20),
+              const Divider(),
+              const SizedBox(height: 20),
+              const Center(
+                child: HomeGlowIcon(Icons.bar_chart_rounded, size: 56),
+              ),
+              const SizedBox(height: 14),
+              const Center(
+                child: Text(
+                  'Usage history is not available',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Daily, weekly and monthly charts will need readings from a supported energy meter.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        const HomeCard(
+          child: Column(
+            children: [
+              HomeGlowIcon(Icons.electric_meter_outlined, color: _DT.amber),
+              SizedBox(height: 14),
+              Text(
+                'Energy meter setup',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'This firmware does not yet include an energy-meter driver. Temperature and humidity sensors cannot measure electricity use.',
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 10),
+              Text(
+                'Choose a compatible meter and add its firmware integration before enabling live energy monitoring.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
 
-// ────────────────────────────────────────────────────────────
-// 29. ALERTS / IN-APP NOTIFICATIONS SCREEN
-// ────────────────────────────────────────────────────────────
 class _AlertsScreen extends ConsumerWidget {
   const _AlertsScreen();
 
@@ -5692,12 +4602,18 @@ class _AlertsScreen extends ConsumerWidget {
 
     return ListView(
       padding: EdgeInsets.only(
-        top: MediaQuery.of(context).padding.top + kToolbarHeight + 12,
+        top: 12,
         left: padding,
         right: padding,
-        bottom: isDesktop ? 40 : 100,
+        bottom: 24,
       ),
       children: [
+        const HomeHero(
+          title: 'Notifications',
+          subtitle: 'Everything happening in your home.',
+          icon: Icons.notifications_outlined,
+        ),
+        const SizedBox(height: 18),
         Row(
           children: [
             Expanded(
@@ -5705,7 +4621,7 @@ class _AlertsScreen extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Notifications',
+                    'Activity',
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 4),
@@ -5715,7 +4631,9 @@ class _AlertsScreen extends ConsumerWidget {
                         : '$unreadCount unread notification${unreadCount == 1 ? '' : 's'}',
                     style: TextStyle(
                       fontSize: 13,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.55),
                     ),
                   ),
                 ],
@@ -5724,13 +4642,15 @@ class _AlertsScreen extends ConsumerWidget {
             if (notifications.isNotEmpty) ...[
               IconButton.filledTonal(
                 tooltip: 'Mark all read',
-                onPressed: () => ref.read(appNotificationsProvider.notifier).markAllRead(),
+                onPressed: () =>
+                    ref.read(appNotificationsProvider.notifier).markAllRead(),
                 icon: const Icon(Icons.done_all_rounded),
               ),
               const SizedBox(width: 8),
               IconButton.filledTonal(
                 tooltip: 'Clear notifications',
-                onPressed: () => ref.read(appNotificationsProvider.notifier).clearAll(),
+                onPressed: () =>
+                    ref.read(appNotificationsProvider.notifier).clearAll(),
                 icon: const Icon(Icons.delete_sweep_rounded),
               ),
             ],
@@ -5749,7 +4669,11 @@ class _AlertsScreen extends ConsumerWidget {
                     shape: BoxShape.circle,
                     color: _DT.green.withValues(alpha: 0.14),
                   ),
-                  child: const Icon(Icons.notifications_none_rounded, color: _DT.green, size: 30),
+                  child: const Icon(
+                    Icons.notifications_none_rounded,
+                    color: _DT.green,
+                    size: 30,
+                  ),
                 ),
                 const SizedBox(height: 14),
                 const Text(
@@ -5763,17 +4687,27 @@ class _AlertsScreen extends ConsumerWidget {
                   style: TextStyle(
                     fontSize: 13,
                     height: 1.35,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.55),
                   ),
                 ),
               ],
             ),
           )
         else
-          ...notifications.map((item) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _NotificationTile(item: item),
-          )),
+          for (final read in [false, true]) ...[
+            if (notifications.any((n) => n.read == read))
+              HomeSection(read ? 'EARLIER' : 'UNREAD'),
+            ...notifications
+                .where((n) => n.read == read)
+                .map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _NotificationTile(item: item),
+                  ),
+                ),
+          ],
       ],
     );
   }
@@ -5811,7 +4745,10 @@ class _NotificationTile extends StatelessWidget {
                         item.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                     if (!item.read)
@@ -5833,7 +4770,9 @@ class _NotificationTile extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12,
                     height: 1.25,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.58),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.58),
                   ),
                 ),
                 const SizedBox(height: 5),
@@ -5841,7 +4780,9 @@ class _NotificationTile extends StatelessWidget {
                   _timeAgo(item.createdAt),
                   style: TextStyle(
                     fontSize: 11,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.42),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.42),
                   ),
                 ),
               ],
@@ -5864,7 +4805,9 @@ class _SettingsScreen extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
     final bleStatus = ref.watch(bleServiceProvider).currentStatus;
     final esp32CodeAsync = ref.watch(userEsp32CodeProvider);
-    final authService = ref.watch(authServiceProvider).requireValue;
+    final authService = ref.watch(authServiceProvider).asData?.value;
+    if (authService == null)
+      return const Center(child: CircularProgressIndicator());
     final user = authService.currentUser;
     final assistantName =
         ref.watch(assistantNameProvider).asData?.value ?? defaultAssistantName;
@@ -5886,9 +4829,7 @@ class _SettingsScreen extends ConsumerWidget {
       try {
         final response = await http
             .post(
-              Uri.parse(
-                'http://$esp32Ip/api/assistant/name',
-              ),
+              Uri.parse('http://$esp32Ip/api/assistant/name'),
               headers: const {'Content-Type': 'application/json'},
               body: jsonEncode({'assistantName': name}),
             )
@@ -5912,13 +4853,15 @@ class _SettingsScreen extends ConsumerWidget {
     void showEditCodeDialog() {
       final rootContext = context;
       final TextEditingController codeController = TextEditingController(
-          text: esp32CodeAsync.value ?? ''
+        text: esp32CodeAsync.value ?? '',
       );
 
       showDialog(
         context: rootContext,
         builder: (dialogContext) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           backgroundColor: Colors.transparent,
           child: _GCard(
             padding: const EdgeInsets.all(24),
@@ -5941,17 +4884,16 @@ class _SettingsScreen extends ConsumerWidget {
                 const SizedBox(height: 16),
                 const Text(
                   'ESP32 Unique Code',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Enter the unique code of your ESP32',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.5),
+                    color: Theme.of(
+                      dialogContext,
+                    ).colorScheme.onSurface.withValues(alpha: 0.5),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -5962,14 +4904,19 @@ class _SettingsScreen extends ConsumerWidget {
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(
-                        color: Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.1),
+                        color: Theme.of(
+                          dialogContext,
+                        ).colorScheme.onSurface.withValues(alpha: 0.1),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: const BorderSide(color: _DT.purple, width: 2),
                     ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -5988,12 +4935,25 @@ class _SettingsScreen extends ConsumerWidget {
                           final newCode = codeController.text.trim();
                           if (newCode.isNotEmpty && user != null) {
                             try {
-                              await authService.updateEsp32Code(user.uid, newCode);
+                              await authService.updateEsp32Code(
+                                user.uid,
+                                newCode,
+                              );
                               ref.invalidate(userEsp32CodeProvider);
                               Navigator.pop(dialogContext);
-                              if (rootContext.mounted) _showSnack(rootContext, '✅ ESP32 Code updated to $newCode', color: _DT.green);
+                              if (rootContext.mounted)
+                                _showSnack(
+                                  rootContext,
+                                  '✅ ESP32 Code updated to $newCode',
+                                  color: _DT.green,
+                                );
                             } catch (e) {
-                              if (rootContext.mounted) _showSnack(rootContext, '❌ Failed to update Code: ${e.toString()}', color: _DT.red);
+                              if (rootContext.mounted)
+                                _showSnack(
+                                  rootContext,
+                                  '❌ Failed to update Code: ${e.toString()}',
+                                  color: _DT.red,
+                                );
                             }
                           }
                         },
@@ -6032,8 +4992,9 @@ class _SettingsScreen extends ConsumerWidget {
         context: rootContext,
         builder: (dialogContext) => StatefulBuilder(
           builder: (context, setDialogState) => Dialog(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
             backgroundColor: Colors.transparent,
             child: _GCard(
               padding: const EdgeInsets.all(24),
@@ -6073,10 +5034,9 @@ class _SettingsScreen extends ConsumerWidget {
                     style: TextStyle(
                       fontSize: 13,
                       height: 1.4,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.58),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.58),
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -6114,9 +5074,7 @@ class _SettingsScreen extends ConsumerWidget {
                             );
                             final error = validateAssistantName(nextName);
                             if (error != null) {
-                              setDialogState(
-                                () => validationError = error,
-                              );
+                              setDialogState(() => validationError = error);
                               return;
                             }
                             try {
@@ -6169,7 +5127,9 @@ class _SettingsScreen extends ConsumerWidget {
       showDialog(
         context: context,
         builder: (context) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           backgroundColor: Colors.transparent,
           child: _GCard(
             padding: const EdgeInsets.all(24),
@@ -6184,17 +5144,16 @@ class _SettingsScreen extends ConsumerWidget {
                 const SizedBox(height: 16),
                 const Text(
                   'Testing Connection...',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Please wait while we test the connection to ESP32',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.5),
                   ),
                 ),
               ],
@@ -6213,7 +5172,9 @@ class _SettingsScreen extends ConsumerWidget {
         showDialog(
           context: context,
           builder: (context) => Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
             backgroundColor: Colors.transparent,
             child: _GCard(
               padding: const EdgeInsets.all(24),
@@ -6225,7 +5186,9 @@ class _SettingsScreen extends ConsumerWidget {
                     height: 60,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: (isConnected ? _DT.green : _DT.red).withValues(alpha: 0.15),
+                      color: (isConnected ? _DT.green : _DT.red).withValues(
+                        alpha: 0.15,
+                      ),
                     ),
                     child: Icon(
                       isConnected ? Icons.check_rounded : Icons.close_rounded,
@@ -6249,7 +5212,9 @@ class _SettingsScreen extends ConsumerWidget {
                         : 'Could not reach ESP32 with code ${esp32CodeAsync.value ?? "Unknown"}',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.5),
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -6257,10 +5222,7 @@ class _SettingsScreen extends ConsumerWidget {
                     const SizedBox(height: 8),
                     Text(
                       'Found ${(devices['devices'] as List?)?.length ?? 0} devices',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: _DT.purple,
-                      ),
+                      style: TextStyle(fontSize: 14, color: _DT.purple),
                     ),
                   ],
                   const SizedBox(height: 20),
@@ -6289,7 +5251,9 @@ class _SettingsScreen extends ConsumerWidget {
         showDialog(
           context: context,
           builder: (context) => Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
             backgroundColor: Colors.transparent,
             child: _GCard(
               padding: const EdgeInsets.all(24),
@@ -6323,7 +5287,9 @@ class _SettingsScreen extends ConsumerWidget {
                     'Error: ${e.toString()}',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.5),
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -6356,7 +5322,9 @@ class _SettingsScreen extends ConsumerWidget {
       showDialog(
         context: rootContext,
         builder: (dialogContext) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           backgroundColor: Colors.transparent,
           child: _GCard(
             padding: const EdgeInsets.all(24),
@@ -6379,18 +5347,12 @@ class _SettingsScreen extends ConsumerWidget {
                 const SizedBox(height: 16),
                 const Text(
                   'Sign Out',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
                 const Text(
                   'Are you sure you want to sign out?',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+                  style: TextStyle(fontSize: 14, color: Colors.grey),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
@@ -6409,18 +5371,28 @@ class _SettingsScreen extends ConsumerWidget {
                           Navigator.pop(dialogContext);
                           try {
                             await authService.signOut();
-                            ref.read(selectedNavIndexProvider.notifier).state = 0;
+                            ref.read(selectedNavIndexProvider.notifier).state =
+                                0;
                             ref.invalidate(assistantNameProvider);
                             ref.invalidate(userDataProvider);
                             ref.invalidate(userEsp32CodeProvider);
                             ref.invalidate(httpDataProvider);
                             if (rootContext.mounted) {
-                              Navigator.of(rootContext, rootNavigator: true)
-                                  .pushNamedAndRemoveUntil('/login', (route) => false);
+                              Navigator.of(
+                                rootContext,
+                                rootNavigator: true,
+                              ).pushNamedAndRemoveUntil(
+                                '/login',
+                                (route) => false,
+                              );
                             }
                           } catch (e) {
                             if (rootContext.mounted) {
-                              _showSnack(rootContext, 'Failed to sign out: $e', color: _DT.red);
+                              _showSnack(
+                                rootContext,
+                                'Failed to sign out: $e',
+                                color: _DT.red,
+                              );
                             }
                           }
                         },
@@ -6444,318 +5416,172 @@ class _SettingsScreen extends ConsumerWidget {
       );
     }
 
-    final padding = ResponsiveHelper.getPadding(context);
-    final isDesktop = ResponsiveHelper.isDesktop(context);
-
-    return esp32CodeAsync.when(
-      data: (esp32Code) {
-        return ListView(
-          padding: EdgeInsets.only(
-            top: MediaQuery.of(context).padding.top + kToolbarHeight + 12,
-            left: padding,
-            right: padding,
-            bottom: isDesktop ? 40 : 100,
+    final esp32Code = esp32CodeAsync.asData?.value;
+    final connected =
+        bleStatus == BleStatus.connected || bleStatus == BleStatus.dataUpdated;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      children: [
+        const HomeHero(
+          title: 'Settings',
+          subtitle: 'Make your home feel like you.',
+          icon: Icons.settings_outlined,
+        ),
+        const HomeSection('APPEARANCE'),
+        HomeCard(
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              for (final item in [
+                (ThemeMode.light, 'Light', Icons.light_mode_outlined),
+                (ThemeMode.dark, 'Dark', Icons.dark_mode_outlined),
+                (ThemeMode.system, 'System', Icons.phone_android_outlined),
+              ])
+                ChoiceChip(
+                  showCheckmark: false,
+                  avatar: Icon(item.$3, size: 18),
+                  label: Text(item.$2),
+                  selected: themeMode == item.$1,
+                  onSelected: (_) =>
+                      ref.read(themeModeProvider.notifier).state = item.$1,
+                ),
+            ],
           ),
-          children: [
-            _GCard(child: Column(children: [
-              _STile(
-                icon: Icons.palette_rounded,
-                title: 'Appearance',
-                subtitle: 'Theme mode',
-                trailing: DropdownButtonHideUnderline(
-                  child: DropdownButton<ThemeMode>(
-                    value: themeMode,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    borderRadius: BorderRadius.circular(16),
-                    items: const [
-                      DropdownMenuItem(
-                          value: ThemeMode.light, child: Text('Light')),
-                      DropdownMenuItem(
-                          value: ThemeMode.dark, child: Text('Dark')),
-                      DropdownMenuItem(
-                          value: ThemeMode.system,
-                          child: Text('System')),
-                    ],
-                    onChanged: (m) {
-                      if (m != null) {
-                        ref.read(themeModeProvider.notifier).state = m;
-                      }
-                    },
-                  ),
-                ),
-              ),
-              const _SDivider(),
-              _STile(
-                icon: Icons.record_voice_over_rounded,
-                title: 'Voice Assistant',
-                subtitle: 'Wake name: $assistantName',
+        ),
+        const HomeSection('DEVICE & VOICE'),
+        HomeCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              HomeSettingsRow(
+                icon: Icons.graphic_eq_rounded,
+                title: 'Voice assistant',
+                subtitle: 'Wake name: $assistantName · Tap to rename',
                 onTap: showAssistantNameDialog,
-                trailing: _PillBtn(
-                  label: 'Rename',
-                  onTap: showAssistantNameDialog,
-                ),
               ),
-              const _SDivider(),
-              _STile(
-                icon: Icons.bluetooth_rounded,
+              const Divider(),
+              HomeSettingsRow(
+                icon: Icons.bluetooth,
                 title: 'Bluetooth',
-                subtitle: (bleStatus == BleStatus.connected || bleStatus == BleStatus.dataUpdated)
-                    ? 'Connected - offline backup ready'
-                    : 'Not connected',
-                trailing: (bleStatus == BleStatus.connected || bleStatus == BleStatus.dataUpdated)
-                    ? Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    color: _DT.green.withValues(alpha: 0.15),
-                    border: Border.all(
-                        color: _DT.green.withValues(alpha: 0.4),
-                        width: 0.8),
-                  ),
-                  child: const Text('● Connected',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _DT.green)),
-                )
-                    : _PillBtn(label: 'Connect', onTap: onConnectBLE),
+                subtitle: connected
+                    ? 'Connected · Offline backup ready'
+                    : 'Not connected · Tap to connect',
+                onTap: connected ? null : onConnectBLE,
               ),
-              const _SDivider(),
-              _STile(
+              const Divider(),
+              HomeSettingsRow(
                 icon: Icons.refresh_rounded,
-                title: 'Manual Refresh',
-                subtitle: 'Pull from BLE / Cloud',
-                trailing: GestureDetector(
-                  onTap: onRefresh,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _DT.purple.withValues(alpha: 0.15),
+                title: 'Manual refresh',
+                subtitle: 'Update device states and connection',
+                onTap: () => unawaited(onRefresh()),
+              ),
+            ],
+          ),
+        ),
+        const HomeSection('ESP32 SETTINGS'),
+        HomeCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const HomeGlowIcon(Icons.memory_rounded, size: 38),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      esp32Code ?? 'Controller code unavailable',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
-                    child: const Icon(Icons.refresh_rounded,
-                        size: 20, color: _DT.purple),
+                  ),
+                ],
+              ),
+              if (esp32CodeAsync.hasError)
+                const Padding(
+                  padding: EdgeInsets.only(top: 10),
+                  child: Text(
+                    'Cloud settings are unavailable. Local settings and Bluetooth remain accessible.',
                   ),
                 ),
-              ),
-            ])),
-            const SizedBox(height: 12),
-            _GCard(child: Column(children: [
-              _STile(
-                icon: Icons.nfc_rounded,
-                title: 'ESP32 Settings',
-                subtitle: 'Code: ${esp32Code ?? "Not set"}',
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    GestureDetector(
-                      onTap: showEditCodeDialog,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          color: _DT.purple.withValues(alpha: 0.15),
-                        ),
-                        child: const Text(
-                          'Edit Code',
-                          style: TextStyle(
-                            color: _DT.purple,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: showEditCodeDialog,
+                      child: const Text('Edit code'),
                     ),
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: showTestConnectionDialog,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          color: _DT.green.withValues(alpha: 0.15),
-                        ),
-                        child: const Text(
-                          'Test',
-                          style: TextStyle(
-                            color: _DT.green,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: showTestConnectionDialog,
+                      child: const Text('Test connection'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const HomeSection('ACCOUNT'),
+        HomeCard(
+          padding: EdgeInsets.zero,
+          child: HomeSettingsRow(
+            icon: Icons.logout_rounded,
+            color: _DT.red,
+            title: 'Sign out',
+            subtitle: user?.email ?? 'Your account',
+            onTap: showSignOutDialog,
+          ),
+        ),
+        const HomeSection('SYSTEM'),
+        HomeCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              HomeSettingsRow(
+                icon: Icons.router_outlined,
+                title: 'Provision ESP32',
+                subtitle: 'Connect a new controller',
+                onTap: () => Navigator.pushNamed(context, '/provision'),
+              ),
+              const Divider(),
+              HomeSettingsRow(
+                icon: Icons.wifi_rounded,
+                title: 'Wi-Fi manager',
+                subtitle: 'Change the ESP32 network',
+                onTap: () => Navigator.pushNamed(context, '/wifiConfig'),
+              ),
+              const Divider(),
+              HomeSettingsRow(
+                icon: Icons.hub_outlined,
+                title: 'I/O modules',
+                subtitle: 'Configure buses and output boards',
+                onTap: () => Navigator.pushNamed(context, '/ioModules'),
+              ),
+              const Divider(),
+              HomeSettingsRow(
+                icon: Icons.info_outline,
+                title: 'About',
+                subtitle: 'Smart Home 2.10.0',
+                onTap: () => showAboutDialog(
+                  context: context,
+                  applicationName: 'Smart Home',
+                  applicationVersion: '2.10.0',
+                  applicationIcon: const HomeGlowIcon(Icons.home_outlined),
+                  children: const [
+                    Text(
+                      'Local device control, Bluetooth backup and an on-device voice assistant.',
                     ),
                   ],
                 ),
-                onTap: showEditCodeDialog,
               ),
-              const _SDivider(),
-              _STile(
-                icon: Icons.logout_rounded,
-                title: 'Sign Out',
-                subtitle: 'Sign out of your account',
-                onTap: showSignOutDialog,
-                trailing: GestureDetector(
-                  onTap: showSignOutDialog,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      color: _DT.red.withValues(alpha: 0.15),
-                    ),
-                    child: const Text(
-                      'Sign Out',
-                      style: TextStyle(
-                        color: _DT.red,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const _SDivider(),
-              _STile(
-                icon: Icons.router_rounded,
-                title: 'Provision ESP32',
-                subtitle: 'Setup a new device',
-                trailing: Icon(Icons.chevron_right_rounded,
-                    size: 20,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.35)),
-                onTap: () {
-                  Navigator.pushNamed(context, '/provision');
-                },
-              ),
-              const _SDivider(),
-              _STile(
-                icon: Icons.wifi_rounded,
-                title: 'Wi-Fi Config',
-                subtitle: 'Change network settings',
-                trailing: Icon(Icons.chevron_right_rounded,
-                    size: 20,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.35)),
-                onTap: () {
-                  Navigator.pushNamed(context, '/wifiConfig');
-                },
-              ),
-              const _SDivider(),
-              _STile(
-                icon: Icons.hub_rounded,
-                title: 'I/O Modules',
-                subtitle: 'Configure I²C buses and PCF8574 boards',
-                trailing: Icon(Icons.chevron_right_rounded,
-                    size: 20,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.35)),
-                onTap: () {
-                  Navigator.pushNamed(context, '/ioModules');
-                },
-              ),
-              const _SDivider(),
-              _STile(
-                icon: Icons.info_outline_rounded,
-                title: 'About',
-                subtitle: 'Smart Home v1.0.0',
-                trailing: Icon(Icons.chevron_right_rounded,
-                    size: 20,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.35)),
-                onTap: () {},
-              ),
-            ])),
-          ],
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (err, _) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            'Cloud settings are unavailable while the phone is offline. Bluetooth backup can still control nearby devices.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65)),
+            ],
           ),
         ),
-      ),
+      ],
     );
-  }
-}
-
-class _SDivider extends StatelessWidget {
-  const _SDivider();
-
-  @override
-  Widget build(BuildContext context) => Container(
-    height: 0.5,
-    margin: const EdgeInsets.symmetric(vertical: 4),
-    color:
-    Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
-  );
-}
-
-class _STile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Widget trailing;
-  final VoidCallback? onTap;
-
-  const _STile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.trailing,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final tile = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            color: _DT.purple.withValues(alpha: 0.12),
-          ),
-          child: Icon(icon, color: _DT.purple, size: 18),
-        ),
-        const SizedBox(width: 12),
-        Expanded(child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w600)),
-            Text(subtitle,
-                style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.5))),
-          ],
-        )),
-        trailing,
-      ]),
-    );
-    return onTap != null
-        ? GestureDetector(onTap: onTap, child: tile)
-        : tile;
   }
 }
 
@@ -6780,38 +5606,46 @@ class _SkeletonLoader extends StatelessWidget {
           : Colors.black.withValues(alpha: 0.03),
       child: SingleChildScrollView(
         padding: EdgeInsets.only(
-          top: MediaQuery.of(context).padding.top + kToolbarHeight + 12,
+          top: 12,
           left: padding,
           right: padding,
-          bottom: isDesktop ? 40 : 100,
+          bottom: 24,
         ),
-        child: const Column(children: [
-          _SBox(h: 54, r: 16),
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: _SBox(h: 90, r: 20)),
-            SizedBox(width: 10),
-            Expanded(child: _SBox(h: 90, r: 20)),
-            SizedBox(width: 10),
-            Expanded(child: _SBox(h: 90, r: 20)),
-          ]),
-          SizedBox(height: 12),
-          _SBox(h: 64, r: 16),
-          SizedBox(height: 12),
-          _SBox(h: 40, r: 16),
-          SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: _SBox(h: 160, r: 20)),
-            SizedBox(width: 12),
-            Expanded(child: _SBox(h: 160, r: 20)),
-          ]),
-          SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: _SBox(h: 160, r: 20)),
-            SizedBox(width: 12),
-            Expanded(child: _SBox(h: 160, r: 20)),
-          ]),
-        ]),
+        child: const Column(
+          children: [
+            _SBox(h: 54, r: 16),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: _SBox(h: 90, r: 20)),
+                SizedBox(width: 10),
+                Expanded(child: _SBox(h: 90, r: 20)),
+                SizedBox(width: 10),
+                Expanded(child: _SBox(h: 90, r: 20)),
+              ],
+            ),
+            SizedBox(height: 12),
+            _SBox(h: 64, r: 16),
+            SizedBox(height: 12),
+            _SBox(h: 40, r: 16),
+            SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: _SBox(h: 160, r: 20)),
+                SizedBox(width: 12),
+                Expanded(child: _SBox(h: 160, r: 20)),
+              ],
+            ),
+            SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: _SBox(h: 160, r: 20)),
+                SizedBox(width: 12),
+                Expanded(child: _SBox(h: 160, r: 20)),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

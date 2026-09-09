@@ -2,10 +2,10 @@ name: iot
 description: "IoT-Smart-Home."
 publish_to: 'none'
 
-version: 2.7.0+42
+version: 2.10.0+45
 
 environment:
-  sdk: '>=3.6.0 <4.0.0'
+  sdk: '>=3.10.7 <4.0.0'
 
 dependencies:
   flutter:
@@ -75,6 +75,7 @@ dependencies:
   flutter_tts: ^4.2.5
   # Imported Gemma `.task` models run on the phone; no model URL or API key.
   flutter_gemma: 0.16.5
+  llamadart: 0.8.22
 
 dev_dependencies:
   flutter_test:
@@ -100,3 +101,11 @@ flutter_icons:
   image_path: "assets/images/logo.png"
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/images/logo.png"
+
+# Qwen uses llama.cpp. Gemma's existing plugin owns LiteRT-LM, so bundling
+# llamadart's extra LiteRT-LM runtime would create duplicate native libraries.
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes:
+        - llama_cpp

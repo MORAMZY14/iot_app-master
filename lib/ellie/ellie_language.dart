@@ -5,8 +5,7 @@ enum EllieLanguageMode { automatic, english, arabic }
 extension EllieLanguageCode on EllieLanguage {
   String get code => this == EllieLanguage.arabic ? 'ar' : 'en';
 
-  String get localeFallback =>
-      this == EllieLanguage.arabic ? 'ar-EG' : 'en-US';
+  String get localeFallback => this == EllieLanguage.arabic ? 'ar-EG' : 'en-US';
 }
 
 extension EllieLanguageModeLabel on EllieLanguageMode {
@@ -25,10 +24,12 @@ extension EllieLanguageModeLabel on EllieLanguageMode {
 class EllieLanguageTools {
   EllieLanguageTools._();
 
-  static final RegExp _arabicCharacters =
-      RegExp(r'[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]');
-  static final RegExp _arabicDiacritics =
-      RegExp(r'[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed]');
+  static final RegExp _arabicCharacters = RegExp(
+    r'[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]',
+  );
+  static final RegExp _arabicDiacritics = RegExp(
+    r'[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed]',
+  );
 
   static EllieLanguage detect(String text) {
     return _arabicCharacters.hasMatch(text)
@@ -37,20 +38,17 @@ class EllieLanguageTools {
   }
 
   static String _normalizeWakePhrase(String text) => text
-        .toLowerCase()
-        .replaceAll(_arabicDiacritics, '')
-        .replaceAll('أ', 'ا')
-        .replaceAll('إ', 'ا')
-        .replaceAll('آ', 'ا')
-        .replaceAll('ى', 'ي')
-        .replaceAll(RegExp(r'[\s,،.!?؟;؛:_\-]+'), ' ')
-        .trim()
-        .replaceAll(RegExp(r'\s+'), ' ');
+      .toLowerCase()
+      .replaceAll(_arabicDiacritics, '')
+      .replaceAll('أ', 'ا')
+      .replaceAll('إ', 'ا')
+      .replaceAll('آ', 'ا')
+      .replaceAll('ى', 'ي')
+      .replaceAll(RegExp(r'[\s,،.!?؟;؛:_\-]+'), ' ')
+      .trim()
+      .replaceAll(RegExp(r'\s+'), ' ');
 
-  static bool hasWakeWord(
-    String text, {
-    String assistantName = 'Ellie',
-  }) {
+  static bool hasWakeWord(String text, {String assistantName = 'Ellie'}) {
     final normalizedText = ' ${_normalizeWakePhrase(text)} ';
     final normalizedName = _normalizeWakePhrase(assistantName);
     if (normalizedName.isNotEmpty &&

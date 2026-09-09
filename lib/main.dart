@@ -9,11 +9,11 @@ import 'dashboard_page.dart';
 import 'provisioning_page.dart';
 import 'wifi_config_page.dart';
 import 'io_modules_page.dart';
-import 'splash_screen.dart';  // 🔥 NEW: Import your splash screen
+import 'splash_screen.dart'; // 🔥 NEW: Import your splash screen
 import 'login_screen.dart';
 import 'app_constants.dart';
 
-const String appVersion = '3.2.1';
+const String appVersion = '3.2.2';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,11 +25,7 @@ void main() {
   // Run the Flutter UI immediately. Firebase is initialized by the providers
   // while the SplashScreen is already visible, so the user no longer sees a
   // blank white screen while Firebase starts.
-  runApp(
-    const ProviderScope(
-      child: MyApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: MyApp()));
 
   // Never present native permission sheets while iOS is still attaching its
   // UIScene/Flutter view. iOS features request their permission when used.

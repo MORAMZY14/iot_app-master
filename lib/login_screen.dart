@@ -1,3 +1,4 @@
+import 'ui/smart_home_design.dart';
 import 'dart:ui' as ui;
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,7 +10,7 @@ import 'auth_service.dart';
 import 'dashboard_page.dart';
 
 class _LoginColors {
-  static const purple = Color(0xFF6C63FF);
+  static const purple = HomeDesign.blue;
   static const deepPurple = Color(0xFF34236F);
   static const cyan = Color(0xFF4DDCFF);
   static const green = Color(0xFF4DFFA0);
@@ -52,13 +53,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       parent: _introController,
       curve: Curves.easeOutCubic,
     );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.018),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _introController,
-      curve: Curves.easeOutCubic,
-    ));
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.018), end: Offset.zero).animate(
+          CurvedAnimation(parent: _introController, curve: Curves.easeOutCubic),
+        );
   }
 
   @override
@@ -95,10 +93,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           Navigator.of(context).pushReplacement(
             PageRouteBuilder(
               pageBuilder: (_, __, ___) => const DashboardPage(),
-              transitionsBuilder: (_, animation, __, child) => FadeTransition(
-                opacity: animation,
-                child: child,
-              ),
+              transitionsBuilder: (_, animation, __, child) =>
+                  FadeTransition(opacity: animation, child: child),
             ),
           );
         }
@@ -125,7 +121,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   String _cleanError(Object error) {
     final message = error.toString().replaceFirst('Exception: ', '').trim();
-    return message.isEmpty ? 'Something went wrong. Please try again.' : message;
+    return message.isEmpty
+        ? 'Something went wrong. Please try again.'
+        : message;
   }
 
   String _getFirebaseErrorMessage(FirebaseAuthException e) {
@@ -176,8 +174,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 shape: BoxShape.circle,
                 color: _LoginColors.purple.withOpacity(0.12),
               ),
-              child: const Icon(Icons.mark_email_read_rounded,
-                  size: 34, color: _LoginColors.purple),
+              child: const Icon(
+                Icons.mark_email_read_rounded,
+                size: 34,
+                color: _LoginColors.purple,
+              ),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -215,7 +216,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 final authService = await ref.read(authServiceProvider.future);
                 await authService.resendVerificationEmail();
                 if (mounted) {
-                  _showSnack('Verification email resent', color: _LoginColors.purple);
+                  _showSnack(
+                    'Verification email resent',
+                    color: _LoginColors.purple,
+                  );
                 }
               } catch (e) {
                 if (mounted) {
@@ -243,7 +247,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Future<void> _showForgotPasswordDialog() async {
-    final emailController = TextEditingController(text: _emailController.text.trim());
+    final emailController = TextEditingController(
+      text: _emailController.text.trim(),
+    );
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -252,7 +258,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.lock_reset_rounded, size: 52, color: _LoginColors.purple),
+            const Icon(
+              Icons.lock_reset_rounded,
+              size: 52,
+              color: _LoginColors.purple,
+            ),
             const SizedBox(height: 16),
             const Text(
               'Enter your email and we will send a reset link.',
@@ -280,10 +290,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 final authService = await ref.read(authServiceProvider.future);
                 await authService.resetPassword(emailController.text.trim());
                 if (mounted) {
-                  _showSnack('Password reset email sent', color: _LoginColors.green);
+                  _showSnack(
+                    'Password reset email sent',
+                    color: _LoginColors.green,
+                  );
                 }
               } catch (e) {
-                if (mounted) _showSnack(_cleanError(e), color: _LoginColors.red);
+                if (mounted)
+                  _showSnack(_cleanError(e), color: _LoginColors.red);
               }
             },
             child: const Text('Send'),
@@ -307,7 +321,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
               padding: EdgeInsets.symmetric(
                 horizontal: isWide ? 48 : 20,
-                vertical: 24,
+                vertical: 12,
               ),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1020),
@@ -327,7 +341,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         : Column(
                             children: [
                               const _CompactHeader(),
-                              const SizedBox(height: 22),
+                              const SizedBox(height: 16),
                               _buildAuthCard(context),
                             ],
                           ),
@@ -376,9 +390,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                     children: [
                       Text(
                         _isLogin ? 'Welcome back' : 'Create account',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w800),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -386,7 +399,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             ? 'Control your home instantly.'
                             : 'Pair your ESP32 and start controlling devices.',
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.58),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withOpacity(0.58),
                         ),
                       ),
                     ],
@@ -402,10 +417,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               reverseDuration: const Duration(milliseconds: 70),
               switchInCurve: Curves.easeOutCubic,
               switchOutCurve: Curves.easeOutCubic,
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: child,
-              ),
+              transitionBuilder: (child, animation) =>
+                  FadeTransition(opacity: animation, child: child),
               child: _isLogin ? _buildLoginFields() : _buildRegisterFields(),
             ),
             AnimatedSwitcher(
@@ -419,37 +432,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                     ),
             ),
             const SizedBox(height: 24),
-            SizedBox(
-              height: 56,
-              child: FilledButton(
-                onPressed: _isLoading ? null : _submit,
-                style: FilledButton.styleFrom(
-                  backgroundColor: _LoginColors.purple,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                ),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 90),
-                  child: _isLoading
-                      ? const SizedBox(
-                          key: ValueKey('loading'),
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.4,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(
-                          _isLogin ? 'Sign In' : 'Create Account',
-                          key: ValueKey(_isLogin),
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                ),
-              ),
+            HomePrimaryButton(
+              label: _isLogin ? 'Sign In' : 'Create Account',
+              onPressed: _isLoading ? null : _submit,
+              busy: _isLoading,
             ),
             const SizedBox(height: 16),
             Row(
@@ -458,7 +444,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 Text(
                   _isLogin ? 'No account yet?' : 'Already registered?',
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.58),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withOpacity(0.58),
                   ),
                 ),
                 TextButton(
@@ -499,8 +487,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           icon: Icons.lock_outline_rounded,
           obscureText: !_passwordVisible,
           suffixIcon: IconButton(
-            onPressed: () => setState(() => _passwordVisible = !_passwordVisible),
-            icon: Icon(_passwordVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+            onPressed: () =>
+                setState(() => _passwordVisible = !_passwordVisible),
+            icon: Icon(
+              _passwordVisible
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
+            ),
           ),
           validator: _validatePassword,
           onFieldSubmitted: (_) => _submit(),
@@ -540,8 +533,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           icon: Icons.lock_outline_rounded,
           obscureText: !_passwordVisible,
           suffixIcon: IconButton(
-            onPressed: () => setState(() => _passwordVisible = !_passwordVisible),
-            icon: Icon(_passwordVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+            onPressed: () =>
+                setState(() => _passwordVisible = !_passwordVisible),
+            icon: Icon(
+              _passwordVisible
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
+            ),
           ),
           validator: _validatePassword,
         ),
@@ -555,7 +553,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           validator: (value) {
             final code = value?.trim() ?? '';
             if (code.isEmpty) return 'Please enter your ESP32 code';
-            if (!code.toUpperCase().startsWith('ESP32-')) return 'Code should start with ESP32-';
+            if (!code.toUpperCase().startsWith('ESP32-'))
+              return 'Code should start with ESP32-';
             if (code.length < 12) return 'Code looks too short';
             return null;
           },
@@ -582,57 +581,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 }
 
 class _LoginBackground extends StatelessWidget {
-  final Widget child;
   const _LoginBackground({required this.child});
-
+  final Widget child;
   @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return RepaintBoundary(
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? const [Color(0xFF080B18), Color(0xFF101433), Color(0xFF090B17)]
-                    : const [Color(0xFFF5F7FF), Color(0xFFEDEAFF), Color(0xFFF2FFF8)],
-              ),
-            ),
-          ),
-          const Positioned(top: -120, left: -90, child: _GlowBlob(size: 360, color: _LoginColors.purple)),
-          const Positioned(top: 170, right: -150, child: _GlowBlob(size: 340, color: _LoginColors.cyan)),
-          const Positioned(bottom: -130, left: 20, child: _GlowBlob(size: 300, color: _LoginColors.green)),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _GlowBlob extends StatelessWidget {
-  final double size;
-  final Color color;
-  const _GlowBlob({required this.size, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [color.withOpacity(0.34), color.withOpacity(0)],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => HomeBackground(child: child);
 }
 
 class _GlassCard extends StatelessWidget {
@@ -640,173 +592,29 @@ class _GlassCard extends StatelessWidget {
   const _GlassCard({required this.child});
 
   @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(32),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(32),
-            color: isDark ? Colors.white.withOpacity(0.07) : Colors.white.withOpacity(0.72),
-            border: Border.all(
-              color: isDark ? Colors.white.withOpacity(0.12) : Colors.white.withOpacity(0.76),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(isDark ? 0.24 : 0.08),
-                blurRadius: 40,
-                offset: const Offset(0, 22),
-              ),
-            ],
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      HomeCard(padding: const EdgeInsets.all(22), child: child);
 }
 
 class _HeroPanel extends StatelessWidget {
   const _HeroPanel();
-
   @override
-  Widget build(BuildContext context) {
-    final textColor = Theme.of(context).colorScheme.onSurface;
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const _AppLogo(size: 86),
-          const SizedBox(height: 26),
-          Text(
-            'Smart control,\nnear-instant response.',
-            style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                  height: 1.05,
-                  fontWeight: FontWeight.w900,
-                  color: textColor,
-                ),
-          ),
-          const SizedBox(height: 18),
-          Text(
-            'Use local Wi‑Fi, BLE backup, and Firebase sync in one clean dashboard.',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  height: 1.45,
-                  color: textColor.withOpacity(0.62),
-                ),
-          ),
-          const SizedBox(height: 28),
-          const Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _FeaturePill(icon: Icons.flash_on_rounded, label: 'Low latency'),
-              _FeaturePill(icon: Icons.bluetooth_connected_rounded, label: 'BLE backup'),
-              _FeaturePill(icon: Icons.security_rounded, label: 'Firebase auth'),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const HomeHero(
+    title: 'Smart Home',
+    subtitle: 'Fast local control. Bluetooth backup. A home that listens.',
+    height: 360,
+  );
 }
 
 class _CompactHeader extends StatelessWidget {
   const _CompactHeader();
-
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        const _AppLogo(size: 82),
-        const SizedBox(height: 14),
-        Text(
-          'Smart Home',
-          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'Fast local control with cloud sync',
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.58),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AppLogo extends StatelessWidget {
-  final double size;
-  const _AppLogo({required this.size});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(size * 0.28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_LoginColors.purple, _LoginColors.cyan],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: _LoginColors.purple.withOpacity(0.32),
-            blurRadius: 34,
-            offset: const Offset(0, 18),
-          ),
-        ],
-      ),
-      child: Center(
-        child: Image.asset(
-          'assets/images/logo.png',
-          width: size * 0.68,
-          height: size * 0.68,
-          fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => Icon(
-            Icons.home_rounded,
-            size: size * 0.52,
-            color: Colors.white,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FeaturePill extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  const _FeaturePill({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.16)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 18, color: _LoginColors.purple),
-          const SizedBox(width: 8),
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const HomeHero(
+    title: 'SMARTER. BRIGHTER. HOME.',
+    subtitle: 'Connected living starts here.',
+    icon: Icons.home_outlined,
+    height: 200,
+  );
 }
 
 class _ModeSwitch extends StatelessWidget {
@@ -824,8 +632,20 @@ class _ModeSwitch extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Expanded(child: _ModeButton(label: 'Login', selected: isLogin, onTap: isLogin ? null : onChanged)),
-          Expanded(child: _ModeButton(label: 'Register', selected: !isLogin, onTap: !isLogin ? null : onChanged)),
+          Expanded(
+            child: _ModeButton(
+              label: 'Sign In',
+              selected: isLogin,
+              onTap: isLogin ? null : onChanged,
+            ),
+          ),
+          Expanded(
+            child: _ModeButton(
+              label: 'Sign Up',
+              selected: !isLogin,
+              onTap: !isLogin ? null : onChanged,
+            ),
+          ),
         ],
       ),
     );
@@ -836,7 +656,11 @@ class _ModeButton extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback? onTap;
-  const _ModeButton({required this.label, required this.selected, required this.onTap});
+  const _ModeButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -863,7 +687,9 @@ class _ModeButton extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? Colors.white : Theme.of(context).colorScheme.onSurface.withOpacity(0.62),
+            color: selected
+                ? Colors.white
+                : Theme.of(context).colorScheme.onSurface.withOpacity(0.62),
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -916,14 +742,21 @@ class _SmartTextField extends StatelessWidget {
         suffixIcon: suffixIcon,
         filled: true,
         fillColor: Theme.of(context).colorScheme.surface.withOpacity(0.72),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 17,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.25)),
+          borderSide: BorderSide(
+            color: Theme.of(context).dividerColor.withOpacity(0.25),
+          ),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.25)),
+          borderSide: BorderSide(
+            color: Theme.of(context).dividerColor.withOpacity(0.25),
+          ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
@@ -954,7 +787,11 @@ class _ErrorBox extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline_rounded, color: _LoginColors.red, size: 20),
+          const Icon(
+            Icons.error_outline_rounded,
+            color: _LoginColors.red,
+            size: 20,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(

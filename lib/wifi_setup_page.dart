@@ -9,9 +9,10 @@ import 'package:flutter/services.dart';
 // ============================================================
 // 1. Provider for Wi‑Fi scanning & connection
 // ============================================================
-final wifiSetupProvider = StateNotifierProvider<WifiSetupNotifier, WifiSetupState>((ref) {
-  return WifiSetupNotifier();
-});
+final wifiSetupProvider =
+    StateNotifierProvider<WifiSetupNotifier, WifiSetupState>((ref) {
+      return WifiSetupNotifier();
+    });
 
 class WifiSetupState {
   final List<WifiNetwork> networks;
@@ -48,7 +49,9 @@ class WifiSetupNotifier extends StateNotifier<WifiSetupState> {
   Future<bool> _requestPermissions() async {
     final status = await Permission.locationWhenInUse.request();
     if (status.isDenied) {
-      state = state.copyWith(error: 'Location permission is required to scan Wi‑Fi networks.');
+      state = state.copyWith(
+        error: 'Location permission is required to scan Wi‑Fi networks.',
+      );
       return false;
     }
     final isEnabled = await WiFiForIoTPlugin.isEnabled();
@@ -73,14 +76,15 @@ class WifiSetupNotifier extends StateNotifier<WifiSetupState> {
       list.sort((a, b) => (b.level ?? -100).compareTo(a.level ?? -100));
       state = state.copyWith(networks: list, isScanning: false);
     } catch (e) {
-      state = state.copyWith(
-        isScanning: false,
-        error: 'Failed to scan: $e',
-      );
+      state = state.copyWith(isScanning: false, error: 'Failed to scan: $e');
     }
   }
 
-  Future<void> connectToNetwork(String ssid, String password, BuildContext context) async {
+  Future<void> connectToNetwork(
+    String ssid,
+    String password,
+    BuildContext context,
+  ) async {
     if (ssid.isEmpty) {
       _showSnack(context, 'SSID cannot be empty', _DT.red);
       return;
@@ -158,20 +162,20 @@ class _GCard extends StatelessWidget {
               end: Alignment.bottomRight,
               colors: isDark
                   ? [
-                Colors.white.withValues(alpha: 0.08),
-                Colors.white.withValues(alpha: 0.03)
-              ]
+                      Colors.white.withValues(alpha: 0.08),
+                      Colors.white.withValues(alpha: 0.03),
+                    ]
                   : [
-                Colors.white.withValues(alpha: 0.6),
-                Colors.white.withValues(alpha: 0.3)
-              ],
+                      Colors.white.withValues(alpha: 0.6),
+                      Colors.white.withValues(alpha: 0.3),
+                    ],
             ),
             border: Border.all(
               color: dangerBorder
                   ? _DT.red.withValues(alpha: 0.45)
                   : (isDark
-                  ? Colors.white.withValues(alpha: 0.1)
-                  : Colors.white.withValues(alpha: 0.4)),
+                        ? Colors.white.withValues(alpha: 0.1)
+                        : Colors.white.withValues(alpha: 0.4)),
               width: 0.8,
             ),
             boxShadow: [
@@ -206,38 +210,54 @@ class _WallpaperBackground extends StatelessWidget {
     final w = MediaQuery.of(context).size.width;
 
     return RepaintBoundary(
-      child: Stack(children: [
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? const [Color(0xFF0B0D1A), Color(0xFF0F1228), Color(0xFF0B0D1A)]
-                  : const [Color(0xFFF0F2FF), Color(0xFFEEEBFF), Color(0xFFF0F4FF)],
+      child: Stack(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isDark
+                    ? const [
+                        Color(0xFF0B0D1A),
+                        Color(0xFF0F1228),
+                        Color(0xFF0B0D1A),
+                      ]
+                    : const [
+                        Color(0xFFF0F2FF),
+                        Color(0xFFEEEBFF),
+                        Color(0xFFF0F4FF),
+                      ],
+              ),
             ),
           ),
-        ),
-        Positioned(
+          Positioned(
             top: -100,
             left: -80,
             child: _Blob(
-                color: isDark ? const Color(0xFF1A1060) : const Color(0xFFCCC8FF),
-                size: w * 0.9)),
-        Positioned(
+              color: isDark ? const Color(0xFF1A1060) : const Color(0xFFCCC8FF),
+              size: w * 0.9,
+            ),
+          ),
+          Positioned(
             top: 300,
             right: -100,
             child: _Blob(
-                color: isDark ? const Color(0xFF2A0D50) : const Color(0xFFE8D8FF),
-                size: w * 0.75)),
-        Positioned(
+              color: isDark ? const Color(0xFF2A0D50) : const Color(0xFFE8D8FF),
+              size: w * 0.75,
+            ),
+          ),
+          Positioned(
             bottom: 80,
             left: 0,
             child: _Blob(
-                color: isDark ? const Color(0xFF0A2A1A) : const Color(0xFFBEF0D8),
-                size: w * 0.6)),
-        child,
-      ]),
+              color: isDark ? const Color(0xFF0A2A1A) : const Color(0xFFBEF0D8),
+              size: w * 0.6,
+            ),
+          ),
+          child,
+        ],
+      ),
     );
   }
 }
@@ -261,14 +281,16 @@ class _Blob extends StatelessWidget {
 }
 
 void _showSnack(BuildContext context, String msg, Color color) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-    content: Text(msg, style: const TextStyle(color: Colors.white)),
-    backgroundColor: color.withValues(alpha: 0.9),
-    behavior: SnackBarBehavior.floating,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-    margin: const EdgeInsets.all(16),
-    duration: const Duration(seconds: 2),
-  ));
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(msg, style: const TextStyle(color: Colors.white)),
+      backgroundColor: color.withValues(alpha: 0.9),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      margin: const EdgeInsets.all(16),
+      duration: const Duration(seconds: 2),
+    ),
+  );
 }
 
 class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -297,7 +319,10 @@ class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
           actions: [
             if (onAction != null)
               IconButton(
-                icon: Icon(actionIcon, color: Theme.of(context).colorScheme.onSurface),
+                icon: Icon(
+                  actionIcon,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
                 onPressed: onAction,
               ),
           ],
@@ -387,7 +412,11 @@ class _WifiSetupPageState extends ConsumerState<WifiSetupPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.wifi_off, size: 64, color: _DT.red.withValues(alpha: 0.7)),
+            Icon(
+              Icons.wifi_off,
+              size: 64,
+              color: _DT.red.withValues(alpha: 0.7),
+            ),
             const SizedBox(height: 16),
             Text(state.error!, textAlign: TextAlign.center),
             const SizedBox(height: 16),
@@ -397,7 +426,9 @@ class _WifiSetupPageState extends ConsumerState<WifiSetupPage> {
       );
     }
     if (state.networks.isEmpty) {
-      return const Center(child: Text('No Wi‑Fi networks found. Pull down to refresh.'));
+      return const Center(
+        child: Text('No Wi‑Fi networks found. Pull down to refresh.'),
+      );
     }
 
     return RefreshIndicator(
@@ -414,21 +445,39 @@ class _WifiSetupPageState extends ConsumerState<WifiSetupPage> {
             child: _GCard(
               padding: const EdgeInsets.all(12),
               child: ListTile(
-                leading: Icon(_signalIcon(wifi.level ?? -100), color: _DT.purple),
-                title: Text(ssid, style: const TextStyle(fontWeight: FontWeight.w600)),
+                leading: Icon(
+                  _signalIcon(wifi.level ?? -100),
+                  color: _DT.purple,
+                ),
+                title: Text(
+                  ssid,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
                 trailing: _selectedSsid == ssid && state.isConnecting
                     ? const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: _DT.purple),
-                )
-                    : Icon(Icons.chevron_right_rounded, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3)),
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: _DT.purple,
+                        ),
+                      )
+                    : Icon(
+                        Icons.chevron_right_rounded,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.3),
+                      ),
                 onTap: state.isConnecting
                     ? null
                     : () {
-                  setState(() => _selectedSsid = ssid);
-                  notifier.connectToNetwork(ssid, _passwordController.text, context);
-                },
+                        setState(() => _selectedSsid = ssid);
+                        notifier.connectToNetwork(
+                          ssid,
+                          _passwordController.text,
+                          context,
+                        );
+                      },
               ),
             ),
           );
@@ -458,19 +507,19 @@ class _PillBtn extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(40),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF8B7FFF), _DT.purple],
-        ),
+        gradient: const LinearGradient(colors: [Color(0xFF8B7FFF), _DT.purple]),
         boxShadow: [
-          BoxShadow(
-              color: _DT.purple.withValues(alpha: 0.35), blurRadius: 14),
+          BoxShadow(color: _DT.purple.withValues(alpha: 0.35), blurRadius: 14),
         ],
       ),
-      child: Text(label,
-          style: const TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w600)),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     ),
   );
 }

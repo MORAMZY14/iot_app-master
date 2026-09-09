@@ -9,9 +9,7 @@ import 'firebase_options.dart';
 
 Future<void> ensureFirebaseInitialized() async {
   if (Firebase.apps.isNotEmpty) return;
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 }
 
 class AuthService {
@@ -30,10 +28,12 @@ class AuthService {
     try {
       logDebug('🔍 Verifying ESP32 Code: $esp32Code');
 
-      final response = await http.get(
-        Uri.parse('$databaseUrl/esp_public/$esp32Code/status.json'),
-        headers: {'Cache-Control': 'no-cache'},
-      ).timeout(AppConfig.mediumTimeout);
+      final response = await http
+          .get(
+            Uri.parse('$databaseUrl/esp_public/$esp32Code/status.json'),
+            headers: {'Cache-Control': 'no-cache'},
+          )
+          .timeout(AppConfig.mediumTimeout);
 
       if (response.statusCode != 200) {
         throw 'ESP32 not found. Please check the code and try again.';
@@ -66,11 +66,13 @@ class AuthService {
           'emailVerified': false,
         };
 
-        final userResponse = await http.put(
-          Uri.parse('$databaseUrl/users/${user.uid}.json'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(userData),
-        ).timeout(AppConfig.mediumTimeout);
+        final userResponse = await http
+            .put(
+              Uri.parse('$databaseUrl/users/${user.uid}.json'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode(userData),
+            )
+            .timeout(AppConfig.mediumTimeout);
 
         if (userResponse.statusCode != 200) {
           throw Exception('Failed to create user in Realtime Database');
@@ -78,11 +80,13 @@ class AuthService {
 
         logDebug('📝 Writing ownerUID to ESP public node...');
 
-        final claimResponse = await http.put(
-          Uri.parse('$databaseUrl/esp_public/$esp32Code/ownerUID.json'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(user.uid),
-        ).timeout(AppConfig.mediumTimeout);
+        final claimResponse = await http
+            .put(
+              Uri.parse('$databaseUrl/esp_public/$esp32Code/ownerUID.json'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode(user.uid),
+            )
+            .timeout(AppConfig.mediumTimeout);
 
         if (claimResponse.statusCode == 200) {
           logDebug('✅ ESP claimed successfully!');
@@ -149,10 +153,12 @@ class AuthService {
   // 🔥 FIX: Read user data from Realtime Database
   Future<Map<String, dynamic>?> getUserData(String uid) async {
     try {
-      final response = await http.get(
-        Uri.parse('$databaseUrl/users/$uid.json'),
-        headers: {'Cache-Control': 'no-cache'},
-      ).timeout(AppConfig.shortTimeout);
+      final response = await http
+          .get(
+            Uri.parse('$databaseUrl/users/$uid.json'),
+            headers: {'Cache-Control': 'no-cache'},
+          )
+          .timeout(AppConfig.shortTimeout);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -168,11 +174,13 @@ class AuthService {
   // 🔥 FIX: Update ESP32 Code in Realtime Database
   Future<void> updateEsp32Code(String uid, String newCode) async {
     try {
-      final response = await http.patch(
-        Uri.parse('$databaseUrl/users/$uid.json'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'esp32Code': newCode}),
-      ).timeout(AppConfig.mediumTimeout);
+      final response = await http
+          .patch(
+            Uri.parse('$databaseUrl/users/$uid.json'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'esp32Code': newCode}),
+          )
+          .timeout(AppConfig.mediumTimeout);
 
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}');
@@ -186,10 +194,12 @@ class AuthService {
   // 🔥 FIX: Read ESP32 Code from Realtime Database
   Future<String?> getUserEsp32Code(String uid) async {
     try {
-      final response = await http.get(
-        Uri.parse('$databaseUrl/users/$uid/esp32Code.json'),
-        headers: {'Cache-Control': 'no-cache'},
-      ).timeout(AppConfig.shortTimeout);
+      final response = await http
+          .get(
+            Uri.parse('$databaseUrl/users/$uid/esp32Code.json'),
+            headers: {'Cache-Control': 'no-cache'},
+          )
+          .timeout(AppConfig.shortTimeout);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -207,9 +217,9 @@ class AuthService {
       User? user = _auth.currentUser;
       if (user != null) {
         // 🔥 FIX: Delete user from Realtime Database
-        await http.delete(
-          Uri.parse('$databaseUrl/users/${user.uid}.json'),
-        ).timeout(AppConfig.shortTimeout);
+        await http
+            .delete(Uri.parse('$databaseUrl/users/${user.uid}.json'))
+            .timeout(AppConfig.shortTimeout);
         await user.delete();
       }
     } catch (e) {

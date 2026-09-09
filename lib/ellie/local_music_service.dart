@@ -45,8 +45,9 @@ class LocalMusicIntentParser {
     );
     text = _normalize(text);
 
-    final mentionsEnglishMusic =
-        RegExp(r'\b(music|song|songs|track|tracks)\b').hasMatch(text);
+    final mentionsEnglishMusic = RegExp(
+      r'\b(music|song|songs|track|tracks)\b',
+    ).hasMatch(text);
     final mentionsArabicMusic = _containsAny(text, const <String>[
       'موسيقي',
       'الموسيقي',
@@ -152,8 +153,9 @@ class LocalMusicIntentParser {
     }
 
     if (mentionsEnglishMusic &&
-        RegExp(r'\bturn\s+(?:the\s+)?music\s+on\b|\bturn\s+on\s+(?:the\s+)?music\b')
-            .hasMatch(text)) {
+        RegExp(
+          r'\bturn\s+(?:the\s+)?music\s+on\b|\bturn\s+on\s+(?:the\s+)?music\b',
+        ).hasMatch(text)) {
       return const LocalMusicIntent(LocalMusicAction.play);
     }
 
@@ -229,7 +231,8 @@ class LocalMusicIntentParser {
 class LocalMusicTrack {
   const LocalMusicTrack({required this.title, required this.path});
 
-  factory LocalMusicTrack.fromJson(Map<String, dynamic> json) => LocalMusicTrack(
+  factory LocalMusicTrack.fromJson(Map<String, dynamic> json) =>
+      LocalMusicTrack(
         title: json['title']?.toString().trim() ?? '',
         path: json['path']?.toString().trim() ?? '',
       );
@@ -281,7 +284,8 @@ class LocalMusicService extends ChangeNotifier {
   bool _autoAdvancing = false;
   int? _currentIndex;
 
-  List<LocalMusicTrack> get tracks => List<LocalMusicTrack>.unmodifiable(_tracks);
+  List<LocalMusicTrack> get tracks =>
+      List<LocalMusicTrack>.unmodifiable(_tracks);
   bool get isPlaying => _player.playing;
   LocalMusicTrack? get currentTrack {
     final index = _currentIndex;
@@ -330,10 +334,9 @@ class LocalMusicService extends ChangeNotifier {
       final storedPath = await _storage.persist(selected);
       if (storedPath == null) continue;
       final baseTitle = _displayTitle(selected.name);
-      _tracks.add(LocalMusicTrack(
-        title: _uniqueTitle(baseTitle),
-        path: storedPath,
-      ));
+      _tracks.add(
+        LocalMusicTrack(title: _uniqueTitle(baseTitle), path: storedPath),
+      );
       imported++;
     }
     if (imported > 0) {
@@ -586,8 +589,10 @@ class LocalMusicService extends ChangeNotifier {
       return title.contains(requested) || requested.contains(title);
     }).toList()
       ..sort((a, b) {
-        final aDifference = (_normalizeTitle(a.title).length - requested.length).abs();
-        final bDifference = (_normalizeTitle(b.title).length - requested.length).abs();
+        final aDifference =
+            (_normalizeTitle(a.title).length - requested.length).abs();
+        final bDifference =
+            (_normalizeTitle(b.title).length - requested.length).abs();
         return aDifference.compareTo(bDifference);
       });
     return matches.isEmpty ? null : matches.first;

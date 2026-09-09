@@ -1,3 +1,5 @@
+import 'ui/wifi_credentials_card.dart';
+import 'ui/smart_home_design.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
@@ -63,7 +65,10 @@ class EspWifiStatus {
 
   factory EspWifiStatus.fromMap(Map<String, dynamic> map, String source) {
     return EspWifiStatus(
-      online: map['online'] == true || map['wifiConnected'] == true || (map['ip'] ?? '').toString().isNotEmpty,
+      online:
+          map['online'] == true ||
+          map['wifiConnected'] == true ||
+          (map['ip'] ?? '').toString().isNotEmpty,
       ssid: (map['ssid'] ?? '').toString(),
       ip: (map['ip'] ?? '').toString(),
       gateway: (map['gateway'] ?? '').toString(),
@@ -82,6 +87,7 @@ class WifiConfigPage extends ConsumerStatefulWidget {
 }
 
 class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
+  EspWifiNetwork? _selectedNetwork;
   final TextEditingController _manualSsidController = TextEditingController();
   StreamSubscription<BleStatus>? _bleSub;
 
@@ -117,16 +123,22 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
     if (user == null) return null;
 
     final codeResponse = await http
-        .get(Uri.parse('${AppConfig.databaseUrl}/users/${user.uid}/esp32Code.json'))
+        .get(
+          Uri.parse(
+            '${AppConfig.databaseUrl}/users/${user.uid}/esp32Code.json',
+          ),
+        )
         .timeout(AppConfig.mediumTimeout);
-    if (codeResponse.statusCode != 200 || codeResponse.body == 'null') return null;
+    if (codeResponse.statusCode != 200 || codeResponse.body == 'null')
+      return null;
     final code = (jsonDecode(codeResponse.body) ?? '').toString();
     if (code.isEmpty) return null;
 
     final statusResponse = await http
         .get(Uri.parse('${AppConfig.databaseUrl}/esp_public/$code/status.json'))
         .timeout(AppConfig.mediumTimeout);
-    if (statusResponse.statusCode != 200 || statusResponse.body == 'null') return null;
+    if (statusResponse.statusCode != 200 || statusResponse.body == 'null')
+      return null;
     final decoded = jsonDecode(statusResponse.body);
     if (decoded is Map && decoded['ip'] != null) {
       _lastIp = decoded['ip'].toString();
@@ -135,13 +147,21 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
     return null;
   }
 
-  Future<Map<String, dynamic>> _localGetJson(String path, {Duration? timeout}) async {
+  Future<Map<String, dynamic>> _localGetJson(
+    String path, {
+    Duration? timeout,
+  }) async {
     final ip = await _lookupEspIp();
     if (ip == null || ip.isEmpty) {
-      throw Exception('ESP32 IP is unavailable. Connect Bluetooth backup or make sure the phone has internet to read the ESP status.');
+      throw Exception(
+        'ESP32 IP is unavailable. Connect Bluetooth backup or make sure the phone has internet to read the ESP status.',
+      );
     }
     final response = await http
-        .get(Uri.parse('http://$ip$path'), headers: const {'Cache-Control': 'no-cache'})
+        .get(
+          Uri.parse('http://$ip$path'),
+          headers: const {'Cache-Control': 'no-cache'},
+        )
         .timeout(timeout ?? AppConfig.longTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('ESP32 returned HTTP ${response.statusCode}');
@@ -151,22 +171,31 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
     return decoded.cast<String, dynamic>();
   }
 
-  Future<Map<String, dynamic>> _localPostJson(String path, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> _localPostJson(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
     final ip = await _lookupEspIp();
     if (ip == null || ip.isEmpty) {
-      throw Exception('ESP32 IP is unavailable. Use Bluetooth backup or connect to the same Wi-Fi as the ESP32.');
+      throw Exception(
+        'ESP32 IP is unavailable. Use Bluetooth backup or connect to the same Wi-Fi as the ESP32.',
+      );
     }
     final response = await http
         .post(
-      Uri.parse('http://$ip$path'),
-      headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
-    )
+          Uri.parse('http://$ip$path'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode(body),
+        )
         .timeout(AppConfig.longTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('ESP32 returned HTTP ${response.statusCode}: ${response.body}');
+      throw Exception(
+        'ESP32 returned HTTP ${response.statusCode}: ${response.body}',
+      );
     }
-    final decoded = response.body.trim().isEmpty ? <String, dynamic>{'success': true} : jsonDecode(response.body);
+    final decoded = response.body.trim().isEmpty
+        ? <String, dynamic>{'success': true}
+        : jsonDecode(response.body);
     if (decoded is! Map) throw Exception('Invalid ESP32 response');
     return decoded.cast<String, dynamic>();
   }
@@ -181,7 +210,9 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
     try {
       final ble = ref.read(bleServiceProvider);
       if (ble.isConnected) {
-        final data = await ble.sendCommand({'cmd': 'wifi_status'}, timeout: const Duration(seconds: 4));
+        final data = await ble.sendCommand({
+          'cmd': 'wifi_status',
+        }, timeout: const Duration(seconds: 4));
         if (!mounted) return;
         setState(() {
           _status = EspWifiStatus.fromMap(data, 'Bluetooth');
@@ -190,7 +221,10 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
         return;
       }
 
-      final data = await _localGetJson('/api/wifi/status', timeout: AppConfig.mediumTimeout);
+      final data = await _localGetJson(
+        '/api/wifi/status',
+        timeout: AppConfig.mediumTimeout,
+      );
       if (!mounted) return;
       setState(() {
         _status = EspWifiStatus.fromMap(data, 'Local Wi-Fi');
@@ -200,7 +234,8 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
       if (!mounted) return;
       setState(() {
         _loadingStatus = false;
-        _error = 'Could not read ESP32 Wi-Fi status. Connect Bluetooth backup, or make sure your phone can reach the ESP32 local IP.\n\n$e';
+        _error =
+            'Could not read ESP32 Wi-Fi status. Connect Bluetooth backup, or make sure your phone can reach the ESP32 local IP.\n\n$e';
       });
     }
   }
@@ -222,34 +257,48 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
         source = 'Bluetooth';
         await _loadStatus();
       } else {
-        final data = await _localGetJson('/api/wifi/scan', timeout: const Duration(seconds: 18));
+        final data = await _localGetJson(
+          '/api/wifi/scan',
+          timeout: const Duration(seconds: 18),
+        );
         final rawList = data['networks'];
-        raw = rawList is List ? rawList.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList() : <Map<String, dynamic>>[];
+        raw = rawList is List
+            ? rawList
+                  .whereType<Map>()
+                  .map((e) => e.cast<String, dynamic>())
+                  .toList()
+            : <Map<String, dynamic>>[];
         source = 'Local Wi-Fi';
         if (data['connected'] is Map) {
-          _status = EspWifiStatus.fromMap((data['connected'] as Map).cast<String, dynamic>(), source);
+          _status = EspWifiStatus.fromMap(
+            (data['connected'] as Map).cast<String, dynamic>(),
+            source,
+          );
         }
       }
 
-      final networks = raw
-          .map(EspWifiNetwork.fromMap)
-          .where((n) => n.ssid.trim().isNotEmpty)
-          .toList()
-        ..sort((a, b) => b.rssi.compareTo(a.rssi));
+      final networks =
+          raw
+              .map(EspWifiNetwork.fromMap)
+              .where((n) => n.ssid.trim().isNotEmpty)
+              .toList()
+            ..sort((a, b) => b.rssi.compareTo(a.rssi));
 
       if (!mounted) return;
       setState(() {
         _networks = networks;
         _scanning = false;
         if (networks.isEmpty) {
-          _error = 'ESP32 scan completed, but no nearby networks were returned. Try again closer to the router.';
+          _error =
+              'ESP32 scan completed, but no nearby networks were returned. Try again closer to the router.';
         }
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _scanning = false;
-        _error = 'ESP32 Wi-Fi scan failed. Use Bluetooth backup if the phone is not on the same network as the ESP32.\n\n$e';
+        _error =
+            'ESP32 Wi-Fi scan failed. Use Bluetooth backup if the phone is not on the same network as the ESP32.\n\n$e';
       });
     }
   }
@@ -267,10 +316,18 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
         final ok = await ble.connectWifi(ssid, password);
         if (!ok) throw Exception('ESP32 rejected the Bluetooth Wi-Fi command');
       } else {
-        await _localPostJson('/api/wifi/connect', {'ssid': ssid, 'password': password, 'pass': password});
+        await _localPostJson('/api/wifi/connect', {
+          'ssid': ssid,
+          'password': password,
+          'pass': password,
+        });
       }
       if (!mounted) return;
-      _showSnack(context, 'Wi-Fi saved. ESP32 will restart and reconnect.', _DT.green);
+      _showSnack(
+        context,
+        'Wi-Fi saved. ESP32 will restart and reconnect.',
+        _DT.green,
+      );
       setState(() => _busy = false);
     } catch (e) {
       if (!mounted) return;
@@ -286,7 +343,8 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
     final confirm = await _showConfirmDialog(
       context,
       title: 'Forget ESP32 Wi-Fi?',
-      message: 'The ESP32 will clear saved Wi-Fi credentials and restart into setup mode.',
+      message:
+          'The ESP32 will clear saved Wi-Fi credentials and restart into setup mode.',
       confirmText: 'Forget',
       danger: true,
     );
@@ -306,13 +364,18 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
         await _localPostJson('/api/wifi/forget', <String, dynamic>{});
       }
       if (!mounted) return;
-      _showSnack(context, 'Wi-Fi forgotten. ESP32 is restarting into setup mode.', _DT.amber);
+      _showSnack(
+        context,
+        'Wi-Fi forgotten. ESP32 is restarting into setup mode.',
+        _DT.amber,
+      );
       setState(() => _busy = false);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = 'Forget network failed. Connect Bluetooth backup or use the ESP32_Config setup mode.\n\n$e';
+        _error =
+            'Forget network failed. Connect Bluetooth backup or use the ESP32_Config setup mode.\n\n$e';
       });
     }
   }
@@ -337,104 +400,93 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
   @override
   Widget build(BuildContext context) {
     final ble = ref.watch(bleServiceProvider);
-    final bleConnected = ble.isConnected;
-
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: _GlassAppBar(
-        title: 'ESP32 Wi-Fi Manager',
-        actionIcon: Icons.refresh_rounded,
-        onAction: _loadingStatus ? null : _loadStatus,
+      appBar: AppBar(
+        title: const Text('ESP32 Wi-Fi Manager'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh network status',
+            onPressed: _loadingStatus ? null : _loadStatus,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
-      body: _WallpaperBackground(
-        child: SafeArea(
-          top: false,
-          child: RefreshIndicator(
-            onRefresh: () async {
-              await _loadStatus();
-              await _scanNetworks();
-            },
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
-              children: [
-                const SizedBox(height: kToolbarHeight + 8),
-                _CurrentNetworkCard(
-                  status: _status,
-                  loading: _loadingStatus,
-                  bleConnected: bleConnected,
-                  busy: _busy,
-                  onForget: _forgetNetwork,
-                  onConnectBle: () => ref.read(bleServiceProvider).connect(),
+      body: HomeBackground(
+        child: RefreshIndicator(
+          onRefresh: () async {
+            await _loadStatus();
+            await _scanNetworks();
+          },
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+            children: [
+              const HomeHero(
+                title: 'Your home connection',
+                subtitle: 'Manage the network used by your ESP32.',
+                icon: Icons.memory_rounded,
+                height: 160,
+              ),
+              const HomeSection('CURRENT NETWORK'),
+              _CurrentNetworkCard(
+                status: _status,
+                loading: _loadingStatus,
+                bleConnected: ble.isConnected,
+                busy: _busy,
+                onForget: _forgetNetwork,
+                onConnectBle: () => unawaited(ble.connect().catchError((_) {})),
+              ),
+              const HomeSection('NEARBY NETWORKS'),
+              HomePrimaryButton(
+                label: _scanning ? 'Scanning…' : 'Scan networks',
+                icon: Icons.wifi_find_rounded,
+                busy: _scanning,
+                onPressed: _busy || _scanning ? null : _scanNetworks,
+              ),
+              const SizedBox(height: 14),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _InlineError(message: _error!),
                 ),
-                const SizedBox(height: 16),
-                _GCard(
-                  padding: const EdgeInsets.all(16),
-                  glowColor: _DT.blue,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              color: _DT.blue.withValues(alpha: 0.15),
-                            ),
-                            child: const Icon(Icons.radar_rounded, color: _DT.blue),
-                          ),
-                          const SizedBox(width: 12),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Nearby networks from ESP32', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                                SizedBox(height: 4),
-                                Text('The ESP scans with its own antenna, not the phone.', style: TextStyle(color: Colors.grey)),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _PrimaryButton(
-                              label: _scanning ? 'Scanning...' : 'Scan nearby networks',
-                              icon: Icons.wifi_find_rounded,
-                              busy: _scanning,
-                              onTap: _scanning ? null : _scanNetworks,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          _IconGlassButton(
-                            icon: Icons.edit_rounded,
-                            tooltip: 'Manual SSID',
-                            onTap: () => _openConnectSheet(),
-                          ),
-                        ],
-                      ),
-                      if (_error != null) ...[
-                        const SizedBox(height: 14),
-                        _InlineError(message: _error!),
-                      ],
-                    ],
+              if (_networks.isEmpty && !_scanning)
+                const HomeCard(
+                  child: Text(
+                    'No networks found yet. Scan using the ESP32’s antenna.',
                   ),
                 ),
-                const SizedBox(height: 16),
-                if (_networks.isEmpty && !_scanning)
-                  _EmptyNetworksCard(onScan: _scanNetworks)
-                else
-                  ..._networks.map((network) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _NetworkTile(
-                      network: network,
-                      onTap: () => _openConnectSheet(network: network),
+              for (final network in _networks)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: HomeCard(
+                    padding: EdgeInsets.zero,
+                    glowColor: _selectedNetwork?.ssid == network.ssid
+                        ? HomeDesign.blue
+                        : null,
+                    child: ListTile(
+                      enabled: !_busy,
+                      onTap: () => setState(() => _selectedNetwork = network),
+                      leading: const Icon(Icons.wifi_rounded),
+                      title: Text(network.ssid),
+                      subtitle: Text(
+                        '${network.rssi} dBm • ${network.secure ? 'Secured' : 'Open'}',
+                      ),
+                      trailing: Icon(
+                        _selectedNetwork?.ssid == network.ssid
+                            ? Icons.check_circle_rounded
+                            : Icons.chevron_right_rounded,
+                      ),
                     ),
-                  )),
-              ],
-            ),
+                  ),
+                ),
+              const HomeSection('CHANGE NETWORK'),
+              WifiCredentialsCard(
+                ssid: _selectedNetwork?.ssid ?? '',
+                secure: _selectedNetwork?.secure ?? true,
+                busy: _busy,
+                onSave: _connectToNetwork,
+                buttonLabel: 'Save & reconnect',
+              ),
+            ],
           ),
         ),
       ),
@@ -498,15 +550,23 @@ class _WifiConnectSheetState extends State<_WifiConnectSheet> {
                   width: 46,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.22),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.22),
                     borderRadius: BorderRadius.circular(999),
                   ),
                 ),
               ),
               const SizedBox(height: 20),
-              const Text('Connect ESP32 to Wi-Fi', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+              const Text(
+                'Connect ESP32 to Wi-Fi',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+              ),
               const SizedBox(height: 6),
-              const Text('Enter the password for this network. The ESP32 will restart after saving.', style: TextStyle(color: Colors.grey)),
+              const Text(
+                'Enter the password for this network. The ESP32 will restart after saving.',
+                style: TextStyle(color: Colors.grey),
+              ),
               const SizedBox(height: 18),
               TextField(
                 controller: _ssidController,
@@ -514,7 +574,9 @@ class _WifiConnectSheetState extends State<_WifiConnectSheet> {
                 decoration: InputDecoration(
                   labelText: 'SSID',
                   prefixIcon: const Icon(Icons.wifi_rounded),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -522,22 +584,34 @@ class _WifiConnectSheetState extends State<_WifiConnectSheet> {
                 controller: _passwordController,
                 obscureText: _obscure,
                 textInputAction: TextInputAction.done,
-                onSubmitted: (_) => widget.onConnect(_ssidController.text.trim(), _passwordController.text),
+                onSubmitted: (_) => widget.onConnect(
+                  _ssidController.text.trim(),
+                  _passwordController.text,
+                ),
                 decoration: InputDecoration(
                   labelText: widget.secure ? 'Password' : 'Password (optional)',
                   prefixIcon: const Icon(Icons.lock_rounded),
                   suffixIcon: IconButton(
                     onPressed: () => setState(() => _obscure = !_obscure),
-                    icon: Icon(_obscure ? Icons.visibility_rounded : Icons.visibility_off_rounded),
+                    icon: Icon(
+                      _obscure
+                          ? Icons.visibility_rounded
+                          : Icons.visibility_off_rounded,
+                    ),
                   ),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
               ),
               const SizedBox(height: 18),
               _PrimaryButton(
                 label: 'Save and reconnect ESP32',
                 icon: Icons.check_rounded,
-                onTap: () => widget.onConnect(_ssidController.text.trim(), _passwordController.text),
+                onTap: () => widget.onConnect(
+                  _ssidController.text.trim(),
+                  _passwordController.text,
+                ),
               ),
             ],
           ),
@@ -579,26 +653,51 @@ class _CurrentNetworkCard extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(18),
-                  color: (connected ? _DT.green : _DT.amber).withValues(alpha: 0.15),
+                  color: (connected ? _DT.green : _DT.amber).withValues(
+                    alpha: 0.15,
+                  ),
                 ),
-                child: Icon(connected ? Icons.wifi_rounded : Icons.wifi_off_rounded, color: connected ? _DT.green : _DT.amber),
+                child: Icon(
+                  connected ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+                  color: connected ? _DT.green : _DT.amber,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(loading ? 'Reading ESP32 Wi-Fi...' : (connected ? 'ESP32 is connected' : 'ESP32 Wi-Fi unavailable'),
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                    Text(
+                      loading
+                          ? 'Reading ESP32 Wi-Fi...'
+                          : (connected
+                                ? 'ESP32 is connected'
+                                : 'ESP32 Wi-Fi unavailable'),
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     Text(
-                      status?.ssid.isNotEmpty == true ? status!.ssid : 'No network name available',
-                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.58)),
+                      status?.ssid.isNotEmpty == true
+                          ? status!.ssid
+                          : 'No network name available',
+                      style: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.58),
+                      ),
                     ),
                   ],
                 ),
               ),
-              if (loading) const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+              if (loading)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
             ],
           ),
           const SizedBox(height: 16),
@@ -606,9 +705,19 @@ class _CurrentNetworkCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _InfoChip(icon: Icons.route_rounded, text: bleConnected ? 'Bluetooth ready' : (status?.source ?? 'No path')),
-              if (status?.ip.isNotEmpty == true) _InfoChip(icon: Icons.lan_rounded, text: status!.ip),
-              if (status != null) _InfoChip(icon: Icons.signal_wifi_4_bar_rounded, text: '${status!.rssi} dBm'),
+              _InfoChip(
+                icon: Icons.route_rounded,
+                text: bleConnected
+                    ? 'Bluetooth ready'
+                    : (status?.source ?? 'No path'),
+              ),
+              if (status?.ip.isNotEmpty == true)
+                _InfoChip(icon: Icons.lan_rounded, text: status!.ip),
+              if (status != null)
+                _InfoChip(
+                  icon: Icons.signal_wifi_4_bar_rounded,
+                  text: '${status!.rssi} dBm',
+                ),
             ],
           ),
           const SizedBox(height: 16),
@@ -616,7 +725,9 @@ class _CurrentNetworkCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _SecondaryButton(
-                  label: bleConnected ? 'Bluetooth connected' : 'Connect Bluetooth backup',
+                  label: bleConnected
+                      ? 'Bluetooth connected'
+                      : 'Connect Bluetooth backup',
                   icon: Icons.bluetooth_rounded,
                   onTap: bleConnected ? null : onConnectBle,
                 ),
@@ -631,62 +742,6 @@ class _CurrentNetworkCard extends StatelessWidget {
               ),
             ],
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NetworkTile extends StatelessWidget {
-  final EspWifiNetwork network;
-  final VoidCallback onTap;
-
-  const _NetworkTile({required this.network, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return _GCard(
-      padding: const EdgeInsets.all(12),
-      glowColor: network.current ? _DT.green : null,
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-        leading: Container(
-          width: 46,
-          height: 46,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            color: _signalColor(network.rssi).withValues(alpha: 0.16),
-          ),
-          child: Icon(_signalIcon(network.rssi), color: _signalColor(network.rssi)),
-        ),
-        title: Text(network.ssid, style: const TextStyle(fontWeight: FontWeight.w800)),
-        subtitle: Text('${network.encryption} • ${network.rssi} dBm${network.channel == null ? '' : ' • CH ${network.channel}'}'),
-        trailing: network.current
-            ? const _MiniBadge(label: 'Current', color: _DT.green)
-            : Icon(Icons.chevron_right_rounded, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.35)),
-        onTap: onTap,
-      ),
-    );
-  }
-}
-
-class _EmptyNetworksCard extends StatelessWidget {
-  final VoidCallback onScan;
-  const _EmptyNetworksCard({required this.onScan});
-
-  @override
-  Widget build(BuildContext context) {
-    return _GCard(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        children: [
-          Icon(Icons.wifi_find_rounded, size: 56, color: _DT.purple.withValues(alpha: 0.85)),
-          const SizedBox(height: 12),
-          const Text('No scanned networks yet', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 6),
-          const Text('Tap scan to let the ESP32 search for nearby Wi-Fi networks.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
-          const SizedBox(height: 18),
-          _PrimaryButton(label: 'Scan now', icon: Icons.radar_rounded, onTap: onScan),
         ],
       ),
     );
@@ -711,7 +766,12 @@ class _InlineError extends StatelessWidget {
         children: [
           const Icon(Icons.error_outline_rounded, color: _DT.red),
           const SizedBox(width: 10),
-          Expanded(child: Text(message, style: const TextStyle(color: _DT.red, height: 1.35))),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(color: _DT.red, height: 1.35),
+            ),
+          ),
         ],
       ),
     );
@@ -734,9 +794,24 @@ class _InfoChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 15, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65)),
+          Icon(
+            icon,
+            size: 15,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.65),
+          ),
           const SizedBox(width: 6),
-          Text(text, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.72), fontWeight: FontWeight.w700)),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.72),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ],
       ),
     );
@@ -756,7 +831,10 @@ class _MiniBadge extends StatelessWidget {
       color: color.withValues(alpha: 0.14),
       border: Border.all(color: color.withValues(alpha: 0.28)),
     ),
-    child: Text(label, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w800)),
+    child: Text(
+      label,
+      style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w800),
+    ),
   );
 }
 
@@ -765,13 +843,25 @@ class _PrimaryButton extends StatelessWidget {
   final IconData icon;
   final bool busy;
   final VoidCallback? onTap;
-  const _PrimaryButton({required this.label, required this.icon, this.busy = false, this.onTap});
+  const _PrimaryButton({
+    required this.label,
+    required this.icon,
+    this.busy = false,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) => ElevatedButton.icon(
     onPressed: onTap,
     icon: busy
-        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+        ? const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white,
+            ),
+          )
         : Icon(icon),
     label: Text(label),
     style: ElevatedButton.styleFrom(
@@ -824,38 +914,13 @@ class _DangerButton extends StatelessWidget {
   );
 }
 
-class _IconGlassButton extends StatelessWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback? onTap;
-  const _IconGlassButton({required this.icon, required this.tooltip, this.onTap});
-
-  @override
-  Widget build(BuildContext context) => Tooltip(
-    message: tooltip,
-    child: InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: Container(
-        width: 52,
-        height: 52,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
-        ),
-        child: Icon(icon, color: _DT.purple),
-      ),
-    ),
-  );
-}
-
 Future<bool?> _showConfirmDialog(
-    BuildContext context, {
-      required String title,
-      required String message,
-      required String confirmText,
-      bool danger = false,
-    }) {
+  BuildContext context, {
+  required String title,
+  required String message,
+  required String confirmText,
+  bool danger = false,
+}) {
   return showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
@@ -863,10 +928,16 @@ Future<bool?> _showConfirmDialog(
       title: Text(title),
       content: Text(message),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('Cancel'),
+        ),
         ElevatedButton(
           onPressed: () => Navigator.pop(dialogContext, true),
-          style: ElevatedButton.styleFrom(backgroundColor: danger ? _DT.red : _DT.purple, foregroundColor: Colors.white),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: danger ? _DT.red : _DT.purple,
+            foregroundColor: Colors.white,
+          ),
           child: Text(confirmText),
         ),
       ],
@@ -888,48 +959,24 @@ IconData _signalIcon(int rssi) {
 }
 
 void _showSnack(BuildContext context, String msg, Color color) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-    content: Text(msg, style: const TextStyle(color: Colors.white)),
-    backgroundColor: color.withValues(alpha: 0.92),
-    behavior: SnackBarBehavior.floating,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-    margin: const EdgeInsets.all(16),
-    duration: const Duration(seconds: 3),
-  ));
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(msg, style: const TextStyle(color: Colors.white)),
+      backgroundColor: color.withValues(alpha: 0.92),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      margin: const EdgeInsets.all(16),
+      duration: const Duration(seconds: 3),
+    ),
+  );
 }
 
 class _DT {
-  static const purple = Color(0xFF6C63FF);
+  static const purple = HomeDesign.blue;
   static const green = Color(0xFF4DFFA0);
   static const amber = Color(0xFFFFB347);
-  static const blue = Color(0xFF64B5F6);
+  static const blue = HomeDesign.cyan;
   static const red = Color(0xFFFF5252);
-}
-
-class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
-  final String title;
-  final IconData actionIcon;
-  final VoidCallback? onAction;
-  const _GlassAppBar({required this.title, required this.actionIcon, this.onAction});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: AppBar(
-          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-          backgroundColor: isDark ? Colors.black.withValues(alpha: 0.28) : Colors.white.withValues(alpha: 0.3),
-          elevation: 0,
-          actions: [IconButton(onPressed: onAction, icon: Icon(actionIcon))],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 }
 
 class _GCard extends StatelessWidget {
@@ -946,83 +993,6 @@ class _GCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return ClipRRect(
-      borderRadius: borderRadius,
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            borderRadius: borderRadius,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? [Colors.white.withValues(alpha: 0.08), Colors.white.withValues(alpha: 0.03)]
-                  : [Colors.white.withValues(alpha: 0.65), Colors.white.withValues(alpha: 0.32)],
-            ),
-            border: Border.all(
-              color: isDark ? Colors.white.withValues(alpha: 0.10) : Colors.white.withValues(alpha: 0.42),
-              width: 0.8,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: isDark ? Colors.black.withValues(alpha: 0.30) : Colors.black.withValues(alpha: 0.05),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
-              ),
-              if (glowColor != null) BoxShadow(color: glowColor!.withValues(alpha: 0.13), blurRadius: 28),
-            ],
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
-class _WallpaperBackground extends StatelessWidget {
-  final Widget child;
-  const _WallpaperBackground({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final w = MediaQuery.of(context).size.width;
-    return RepaintBoundary(
-      child: Stack(children: [
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark ? const [Color(0xFF0B0D1A), Color(0xFF0F1228), Color(0xFF12091F)] : const [Color(0xFFF0F2FF), Color(0xFFEEEBFF), Color(0xFFF0F4FF)],
-            ),
-          ),
-        ),
-        Positioned(top: -120, left: -90, child: _Blob(color: isDark ? const Color(0xFF1A1060) : const Color(0xFFCCC8FF), size: w * 0.9)),
-        Positioned(top: 300, right: -120, child: _Blob(color: isDark ? const Color(0xFF2A0D50) : const Color(0xFFE8D8FF), size: w * 0.75)),
-        Positioned(bottom: 60, left: -60, child: _Blob(color: isDark ? const Color(0xFF0A2A1A) : const Color(0xFFBEF0D8), size: w * 0.65)),
-        child,
-      ]),
-    );
-  }
-}
-
-class _Blob extends StatelessWidget {
-  final Color color;
-  final double size;
-  const _Blob({required this.color, required this.size});
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: size,
-    height: size,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      gradient: RadialGradient(colors: [color.withValues(alpha: 0.5), color.withValues(alpha: 0)]),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      HomeCard(padding: padding, glowColor: glowColor, child: child);
 }

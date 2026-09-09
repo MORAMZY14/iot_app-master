@@ -7,13 +7,13 @@ class AppConfig {
     'ESP32_LOCAL_IP',
     defaultValue: '',
   );
-  static const String appVersion = '2.7.0';
+  static const String appVersion = '2.10.0';
 
   // Low-latency control path timings. Local Wi-Fi/BLE should fail fast so the
   // app can fall back to Firebase without making the button feel frozen.
   static const Duration instantTimeout = Duration(milliseconds: 450);
-  static const Duration bleControlTimeout = Duration(milliseconds: 650);
-  static const Duration localControlTimeout = Duration(milliseconds: 450);
+  static const Duration bleControlTimeout = Duration(milliseconds: 2500);
+  static const Duration localControlTimeout = Duration(milliseconds: 1500);
   static const Duration firebaseControlTimeout = Duration(milliseconds: 2500);
 
   static const Duration shortTimeout = Duration(milliseconds: 1200);

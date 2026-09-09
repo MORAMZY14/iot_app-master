@@ -49,7 +49,9 @@ class BleService {
 
   BleStatus _currentStatus = BleStatus.disconnected;
   BleStatus get currentStatus => _currentStatus;
-  bool get isConnected => _currentStatus == BleStatus.connected || _currentStatus == BleStatus.dataUpdated;
+  bool get isConnected =>
+      _currentStatus == BleStatus.connected ||
+      _currentStatus == BleStatus.dataUpdated;
 
   bool _isUserCancelledBluetoothError(Object error) {
     final message = error.toString().toLowerCase();
@@ -91,7 +93,7 @@ class BleService {
       await _safeStopScan();
 
       scanSub = FlutterBluePlus.scanResults.listen(
-            (results) {
+        (results) {
           for (final result in results) {
             final name = result.device.platformName.isNotEmpty
                 ? result.device.platformName
@@ -100,7 +102,8 @@ class BleService {
                 .map((e) => e.toString().toLowerCase())
                 .contains(serviceUuid.toLowerCase());
 
-            if ((name == esp32DeviceName || hasService) && !foundDevice.isCompleted) {
+            if ((name == esp32DeviceName || hasService) &&
+                !foundDevice.isCompleted) {
               foundDevice.complete(result.device);
               break;
             }
@@ -145,7 +148,9 @@ class BleService {
 
     _updateStatus(BleStatus.connecting);
     try {
-      await _device!.connect(autoConnect: false).timeout(const Duration(seconds: 6));
+      await _device!
+          .connect(autoConnect: false)
+          .timeout(const Duration(seconds: 6));
       await _connectionSub?.cancel();
       _connectionSub = _device!.connectionState.listen((state) {
         if (_disposed) return;
@@ -157,7 +162,8 @@ class BleService {
 
       final services = await _device!.discoverServices();
       for (final service in services) {
-        if (service.uuid.toString().toLowerCase() != serviceUuid.toLowerCase()) continue;
+        if (service.uuid.toString().toLowerCase() != serviceUuid.toLowerCase())
+          continue;
         for (final char in service.characteristics) {
           final uuid = char.uuid.toString().toLowerCase();
           if (uuid == commandCharUuid.toLowerCase()) {
@@ -192,9 +198,9 @@ class BleService {
   }
 
   Future<Map<String, dynamic>> sendCommand(
-      Map<String, dynamic> command, {
-        Duration timeout = AppConfig.mediumTimeout,
-      }) async {
+    Map<String, dynamic> command, {
+    Duration timeout = AppConfig.mediumTimeout,
+  }) async {
     if (!isConnected || _commandChar == null) {
       throw StateError('BLE is not connected');
     }
@@ -210,6 +216,10 @@ class BleService {
 
     _commandBusy = true;
     final expectedCmd = (command['cmd'] ?? '').toString();
+    final requestId = DateTime.now().microsecondsSinceEpoch.toString();
+    final encodedCommand = utf8.encode(
+      jsonEncode({...command, 'requestId': requestId}),
+    );
 
     try {
       // Record the current firmware response sequence before writing. Reads can
@@ -223,8 +233,7 @@ class BleService {
           final decodedBefore = jsonDecode(beforeText);
           if (decodedBefore is Map &&
               decodedBefore['responseSequence'] is num) {
-            final sequence =
-                (decodedBefore['responseSequence'] as num).toInt();
+            final sequence = (decodedBefore['responseSequence'] as num).toInt();
             if (sequence > baselineSequence) baselineSequence = sequence;
             if (sequence > _lastResponseSequence) {
               _lastResponseSequence = sequence;
@@ -235,10 +244,12 @@ class BleService {
         // Firmware before 2.5 has no response sequence; retain compatibility.
       }
 
-      await _commandChar!.write(
-        utf8.encode(jsonEncode(command)),
-        withoutResponse: false,
-      );
+      if (encodedCommand.length > 511) {
+        throw const FormatException(
+          'Command is too long for Bluetooth. Use a shorter message.',
+        );
+      }
+      await _commandChar!.write(encodedCommand, withoutResponse: false);
 
       final deadline = DateTime.now().add(timeout);
       Map<String, dynamic>? last;
@@ -250,6 +261,9 @@ class BleService {
         final decoded = jsonDecode(text);
         if (decoded is! Map) continue;
         last = decoded.cast<String, dynamic>();
+        final responseRequestId = last['requestId']?.toString();
+        if (responseRequestId != null && responseRequestId != requestId)
+          continue;
         final rawSequence = last['responseSequence'];
         if (rawSequence is num) {
           final sequence = rawSequence.toInt();
@@ -257,9 +271,13 @@ class BleService {
           _lastResponseSequence = sequence;
         }
         final responseCmd = (last['cmd'] ?? '').toString();
-        if (expectedCmd.isEmpty || responseCmd.isEmpty || responseCmd == expectedCmd) {
+        if (expectedCmd.isEmpty ||
+            responseCmd.isEmpty ||
+            responseCmd == expectedCmd) {
           if (last['ok'] == false) {
-            throw Exception(last['error'] ?? last['message'] ?? 'BLE command failed');
+            throw Exception(
+              last['error'] ?? last['message'] ?? 'BLE command failed',
+            );
           }
           return last;
         }
@@ -294,10 +312,9 @@ class BleService {
   }
 
   Future<Map<String, dynamic>> readControllerStatus() async {
-    final data = await sendCommand(
-      {'cmd': 'status'},
-      timeout: AppConfig.shortTimeout,
-    );
+    final data = await sendCommand({
+      'cmd': 'status',
+    }, timeout: AppConfig.shortTimeout);
     final ip = (data['ip'] ?? '').toString().trim();
     if (ip.isNotEmpty && ip != '0.0.0.0' && ip != 'BLE') {
       controllerIp = ip;
@@ -315,16 +332,15 @@ class BleService {
   Future<void> refreshDevices() async {
     if (!isConnected) return;
     try {
-      final response = await sendCommand({'cmd': 'get_devices'}, timeout: AppConfig.mediumTimeout);
+      final response = await sendCommand({
+        'cmd': 'get_devices',
+      }, timeout: AppConfig.mediumTimeout);
       final rawDevices = response['devices'];
       if (rawDevices is List) {
-        devices = rawDevices
-            .whereType<Map>()
-            .map((e) {
-              final map = e.cast<String, dynamic>();
-              return map;
-            })
-            .toList();
+        devices = rawDevices.whereType<Map>().map((e) {
+          final map = e.cast<String, dynamic>();
+          return map;
+        }).toList();
         lights = <String, bool>{};
         for (final d in devices) {
           // Device ID is unique; room is not. Using room as the key caused two
@@ -420,7 +436,8 @@ class BleService {
     return response['ok'] == true;
   }
 
-  Future<bool> editChannel(String id, int channel) => editOutput(id, 'io_1', channel);
+  Future<bool> editChannel(String id, int channel) =>
+      editOutput(id, 'io_1', channel);
 
   Future<bool> requestDeviceSync() async {
     final response = await sendCommand({
@@ -469,12 +486,12 @@ class BleService {
     }
   }
 
-
   Future<void> _safeStopScan() async {
     try {
-      final scanning = await FlutterBluePlus.isScanning
-          .first
-          .timeout(const Duration(milliseconds: 250), onTimeout: () => false);
+      final scanning = await FlutterBluePlus.isScanning.first.timeout(
+        const Duration(milliseconds: 250),
+        onTimeout: () => false,
+      );
       if (scanning) {
         await FlutterBluePlus.stopScan();
       }
@@ -485,6 +502,7 @@ class BleService {
   }
 
   void _disconnect({bool clearDevice = true}) {
+    _lastResponseSequence = 0;
     _sensorPollTimer?.cancel();
     _sensorPollTimer = null;
     _connectionSub?.cancel();

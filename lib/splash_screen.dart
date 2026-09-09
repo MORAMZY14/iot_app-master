@@ -1,3 +1,4 @@
+import 'ui/smart_home_design.dart';
 import 'dart:async';
 import 'dart:ui' as ui;
 
@@ -30,9 +31,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       duration: const Duration(milliseconds: 520),
     )..forward();
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
-    _scale = Tween<double>(begin: 0.96, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
-    );
+    _scale = Tween<double>(
+      begin: 0.96,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
   }
 
   @override
@@ -94,11 +96,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                     const SizedBox(height: 30),
                     Text(
                       'Smart Home',
-                      style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.2,
-                      ),
+                      style: Theme.of(context).textTheme.headlineLarge
+                          ?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.2,
+                          ),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -109,10 +112,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 36),
+                    SizedBox(height: MediaQuery.sizeOf(context).height * .27),
                     authState.when(
-                      data: (_) => const _LoadingPill(text: 'Preparing dashboard'),
-                      loading: () => const _LoadingPill(text: 'Starting services'),
+                      data: (_) =>
+                          const _LoadingPill(text: 'Preparing dashboard'),
+                      loading: () =>
+                          const _LoadingPill(text: 'Starting services'),
                       error: (error, _) => Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 24),
                         child: Text(
@@ -134,101 +139,45 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 }
 
 class _SplashBackground extends StatelessWidget {
-  final Widget child;
   const _SplashBackground({required this.child});
-
+  final Widget child;
   @override
-  Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF130D33), Color(0xFF21105B), Color(0xFF071826)],
-              ),
-            ),
-          ),
-          const Positioned(top: -130, left: -100, child: _SplashGlow(size: 360, color: Color(0xFF6C63FF))),
-          const Positioned(top: 170, right: -160, child: _SplashGlow(size: 360, color: Color(0xFF4DDCFF))),
-          const Positioned(bottom: -140, left: 40, child: _SplashGlow(size: 320, color: Color(0xFF4DFFA0))),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _SplashGlow extends StatelessWidget {
-  final double size;
-  final Color color;
-  const _SplashGlow({required this.size, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [color.withOpacity(0.38), color.withOpacity(0)],
+  Widget build(BuildContext context) => HomeBackground(
+    child: Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: MediaQuery.sizeOf(context).height * .48,
+          child: ShaderMask(
+            shaderCallback: (r) => const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.transparent,
+                Colors.white,
+                Colors.white,
+                Colors.transparent,
+              ],
+              stops: [0, .25, .8, 1],
+            ).createShader(r),
+            blendMode: BlendMode.dstIn,
+            child: Image.asset(HomeDesign.house, fit: BoxFit.cover),
           ),
         ),
-      ),
-    );
-  }
+        child,
+      ],
+    ),
+  );
 }
 
 class _SplashLogo extends StatelessWidget {
   const _SplashLogo();
-
   @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(36),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          width: 132,
-          height: 132,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(36),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Colors.white.withOpacity(0.24), Colors.white.withOpacity(0.08)],
-            ),
-            border: Border.all(color: Colors.white.withOpacity(0.22)),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF6C63FF).withOpacity(0.34),
-                blurRadius: 40,
-                offset: const Offset(0, 18),
-              ),
-            ],
-          ),
-          child: Center(
-            child: Image.asset(
-              'assets/images/logo.png',
-              width: 92,
-              height: 92,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => const Icon(
-                Icons.home_rounded,
-                size: 72,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      const HomeGlowIcon(Icons.home_rounded, size: 120);
 }
 
 class _LoadingPill extends StatelessWidget {

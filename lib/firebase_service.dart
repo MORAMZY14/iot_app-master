@@ -21,9 +21,9 @@ class FirebaseService {
   // Get the entire smartHome node
   Stream<DatabaseEvent> getData() async* {
     await _ensureInitialized();
-          final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null) return;
-      yield* _database.child('smartHome').child(uid).onValue;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    yield* _database.child('smartHome').child(uid).onValue;
   }
 
   // Set room light status

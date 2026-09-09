@@ -14,10 +14,12 @@ class LocalMusicStorage {
 
     final extension = path_util.extension(selected.name).toLowerCase();
     if (!RegExp(r'^\.[a-z0-9]{1,8}$').hasMatch(extension)) return null;
-    final destination = File(path_util.join(
-      directory.path,
-      'track_${DateTime.now().microsecondsSinceEpoch}$extension',
-    ));
+    final destination = File(
+      path_util.join(
+        directory.path,
+        'track_${DateTime.now().microsecondsSinceEpoch}$extension',
+      ),
+    );
 
     final sourcePath = selected.path;
     if (sourcePath != null && sourcePath.trim().isNotEmpty) {
@@ -60,11 +62,13 @@ class LocalMusicStorage {
     }
 
     final support = await getApplicationSupportDirectory();
-    final candidate = File(path_util.join(
-      support.path,
-      'local_music',
-      path_util.basename(storedPath),
-    ));
+    final candidate = File(
+      path_util.join(
+        support.path,
+        'local_music',
+        path_util.basename(storedPath),
+      ),
+    );
     return await candidate.exists() ? candidate.path : null;
   }
 

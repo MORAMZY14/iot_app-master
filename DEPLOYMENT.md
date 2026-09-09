@@ -1,3 +1,7 @@
+# Updated 2.8 instructions
+
+Start with [LAPTOP_TRAINING.md](LAPTOP_TRAINING.md) for the corrected training/export workflow.
+
 # SmartHome local/offline build guide
 
 This is a development/source package with a local voice assistant. It does not
@@ -79,7 +83,7 @@ ESP8266Audio and ESP8266SAM only if local English speech through an I2S speaker
 **Upload**, and open Serial Monitor at 115200 baud.
 
 For this build, confirm that BLE status or Serial diagnostics report
-`2.6.0-music-multidevice`. Flutter `2.7.0+42` deliberately keeps that local
+`2.8.0-responsive-local`. Flutter `2.8.0+43` deliberately keeps that local
 firmware protocol while adding the phone model; the ESP32 does not need the LLM
 or a model file.
 

@@ -1,3 +1,4 @@
+import '../ui/smart_home_design.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import '../ble_service.dart';
 import 'ellie_language.dart';
 import 'ellie_voice_controller.dart';
 import 'local_llm_service.dart';
+import 'assistant_memory_sheet.dart';
 import 'local_music_service.dart';
 
 class EllieAssistantSheet extends StatefulWidget {
@@ -77,17 +79,24 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
       // The phone is the dependable bilingual speaker. ESP32 speech remains
       // available in firmware, but is optional hardware and English-only.
       outputMode: EllieOutputMode.phone,
-      requireWakeWord: true,
+      requireWakeWord: false,
     );
     _subscription = _controller.events.listen(_handleEvent);
     unawaited(_initialize());
   }
 
   Future<void> _initialize() async {
-    await Future.wait<void>(<Future<void>>[
-      _musicService.initialize(),
-      _llmService.initialize(),
-    ]);
+    // Loading a large model must not delay microphone/TTS initialization.
+    unawaited(
+      _llmService.initialize().catchError((Object error) {
+        if (mounted) setState(() {});
+      }),
+    );
+    unawaited(
+      _musicService.initialize().catchError((Object error) {
+        if (mounted) setState(() {});
+      }),
+    );
     final preferences = await SharedPreferences.getInstance();
     final savedMode = EllieLanguageTools.modeFromStorage(
       preferences.getString(_languagePreferenceKey),
@@ -112,23 +121,26 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
       _event = event;
       if (event.phase == EllieVoicePhase.thinking &&
           event.transcript?.trim().isNotEmpty == true) {
-        _appendMessage(_EllieMessage(
-          text: event.transcript!.trim(),
-          language: event.language,
-          isUser: true,
-        ));
+        _appendMessage(
+          _EllieMessage(
+            text: event.transcript!.trim(),
+            language: event.language,
+            isUser: true,
+          ),
+        );
       } else if (event.phase == EllieVoicePhase.speaking &&
           event.reply?.trim().isNotEmpty == true) {
-        _appendMessage(_EllieMessage(
-          text: event.reply!.trim(),
-          language: event.language,
-        ));
+        _appendMessage(
+          _EllieMessage(text: event.reply!.trim(), language: event.language),
+        );
       } else if (event.phase == EllieVoicePhase.error) {
-        _appendMessage(_EllieMessage(
-          text: _friendlyError(event),
-          language: event.language,
-          isSystem: true,
-        ));
+        _appendMessage(
+          _EllieMessage(
+            text: _friendlyError(event),
+            language: event.language,
+            isSystem: true,
+          ),
+        );
       }
     });
     _scrollToLatest();
@@ -143,6 +155,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
       return;
     }
     _messages.add(message);
+    if (_messages.length > 100) _messages.removeAt(0);
   }
 
   String _friendlyError(EllieVoiceEvent event) {
@@ -238,143 +251,258 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
     final listening = _event.phase == EllieVoicePhase.listening;
-    final height = MediaQuery.sizeOf(context).height * 0.88;
-
-    return Container(
-      height: height,
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
-            blurRadius: 28,
-            offset: const Offset(0, -8),
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    return Material(
+      color: Colors.transparent,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: keyboard),
+        child: SizedBox(
+          height: (MediaQuery.sizeOf(context).height * .95 - keyboard).clamp(
+            260.0,
+            MediaQuery.sizeOf(context).height,
           ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          children: <Widget>[
-            const SizedBox(height: 10),
-            Container(
-              width: 42,
-              height: 4,
-              decoration: BoxDecoration(
-                color: colors.onSurface.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-            _buildHeader(context),
-            _buildLanguageSelector(context),
-            _buildAiNotice(context),
-            _buildLocalNotice(context),
-            Divider(height: 1, color: colors.outlineVariant),
-            Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
-                itemCount: _messages.length,
-                itemBuilder: (context, index) =>
-                    _MessageBubble(message: _messages[index]),
-              ),
-            ),
-            _buildStatus(context),
-            _buildComposer(context, listening: listening),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-              child: Text(
-                'Local AI + on-device speech + ESP32 safety · ذكاء ونطق محلي مع أمان ESP',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: colors.onSurfaceVariant.withValues(alpha: 0.72),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+            child: HomeBackground(
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  children: [
+                    _buildHeader(context),
+                    Expanded(
+                      child: CustomScrollView(
+                        controller: _scrollController,
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: _connectionCards(context),
+                            ),
+                          ),
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                            sliver: SliverList.builder(
+                              itemCount: _messages.length,
+                              itemBuilder: (context, i) =>
+                                  _MessageBubble(message: _messages[i]),
+                            ),
+                          ),
+                          if (_messages.isEmpty)
+                            const SliverToBoxAdapter(
+                              child: Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Column(
+                                  children: [
+                                    HomeGlowIcon(
+                                      Icons.smart_toy_outlined,
+                                      size: 58,
+                                    ),
+                                    SizedBox(height: 14),
+                                    Text(
+                                      'How can I help at home?',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Ask a question or tell me which device to control.',
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (keyboard == 0) ...[
+                      _buildLanguageSelector(context),
+                      HomeVoiceButton(
+                        listening: listening,
+                        onPressed: _isBusy && !listening
+                            ? null
+                            : () => unawaited(_toggleListening()),
+                        label: listening ? 'Stop listening' : 'Tap to speak',
+                      ),
+                      _buildStatus(context),
+                    ],
+                    _buildComposer(context, listening: listening),
+                  ],
                 ),
               ),
             ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _connectionCards(BuildContext context) {
+    final ready = _llmService.state == LocalLlmState.ready;
+    final connected =
+        _bleStatus == BleStatus.connected ||
+        _bleStatus == BleStatus.dataUpdated;
+    final connecting =
+        _bleStatus == BleStatus.scanning || _bleStatus == BleStatus.connecting;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: HomeCard(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const HomeGlowIcon(Icons.bluetooth, size: 34),
+                const SizedBox(height: 10),
+                const Text(
+                  'Bluetooth',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  connected
+                      ? 'Connected'
+                      : connecting
+                      ? 'Connecting…'
+                      : 'Not connected',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                TextButton(
+                  onPressed: connected || connecting
+                      ? null
+                      : () => unawaited(_connectBluetooth()),
+                  child: Text(connected ? 'Backup ready' : 'Connect'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: HomeCard(
+            padding: const EdgeInsets.all(12),
+            glowColor: ready ? HomeDesign.blue : null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const HomeGlowIcon(
+                  Icons.psychology_outlined,
+                  color: HomeDesign.violet,
+                  size: 34,
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Local AI',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  ready
+                      ? (_llmService.modelName ?? 'Ready on this phone')
+                      : switch (_llmService.state) {
+                          LocalLlmState.notInstalled =>
+                            'Import a model to begin',
+                          LocalLlmState.loading => 'Loading…',
+                          LocalLlmState.generating => 'Thinking…',
+                          LocalLlmState.error => 'Model needs attention',
+                          LocalLlmState.unsupported =>
+                            'Unavailable on this platform',
+                          LocalLlmState.ready => 'Ready',
+                        },
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
+                ),
+                TextButton(
+                  onPressed: _isBusy
+                      ? null
+                      : () => unawaited(_showLocalAiManager()),
+                  child: Text(ready ? 'Manage model' : 'Import model'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildHeader(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: <Color>[colors.primary, colors.tertiary],
-              ),
-            ),
-            child: const Icon(Icons.graphic_eq_rounded, color: Colors.white),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  widget.assistantName,
-                  style: const TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w800,
-                  ),
+      padding: const EdgeInsets.fromLTRB(16, 6, 8, 8),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: colors.primaryContainer,
+                child: Icon(
+                  Icons.graphic_eq_rounded,
+                  color: colors.onPrimaryContainer,
                 ),
-                const SizedBox(height: 2),
-                const Text(
-                  'Smart-home assistant · مساعدة المنزل الذكي',
-                  style: TextStyle(fontSize: 12),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Voice Assistant',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
-              ],
-            ),
-          ),
-          IconButton(
-            tooltip: 'Local AI model · نموذج الذكاء المحلي',
-            onPressed: _isBusy ? null : () => unawaited(_showLocalAiManager()),
-            icon: Badge(
-              isLabelVisible: _llmService.isReady,
-              backgroundColor: Colors.greenAccent.shade400,
-              child: Icon(
-                _llmService.isGenerating
-                    ? Icons.psychology_alt_rounded
-                    : Icons.psychology_rounded,
               ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Local music library · مكتبة الموسيقى المحلية',
-            onPressed: _isBusy ? null : () => unawaited(_showMusicLibrary()),
-            icon: Badge.count(
-              count: _musicService.tracks.length,
-              isLabelVisible: _musicService.tracks.isNotEmpty,
-              child: Icon(
-                _musicService.isPlaying
-                    ? Icons.music_note_rounded
-                    : Icons.library_music_rounded,
+              IconButton(
+                tooltip: 'Close',
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close_rounded),
               ),
-            ),
+            ],
           ),
-          IconButton(
-            tooltip: 'Test phone voice · اختبار صوت الهاتف',
-            onPressed: _isBusy
-                ? null
-                : () => unawaited(_controller.testPhoneVoice()),
-            icon: const Icon(Icons.volume_up_rounded),
-          ),
-          IconButton(
-            tooltip: 'Close · إغلاق',
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.close_rounded),
+          Wrap(
+            spacing: 4,
+            children: [
+              TextButton.icon(
+                onPressed: _isBusy
+                    ? null
+                    : () => unawaited(_showLocalAiManager()),
+                icon: const Icon(Icons.psychology_outlined, size: 18),
+                label: const Text('Import AI'),
+              ),
+              TextButton.icon(
+                onPressed: _isBusy
+                    ? null
+                    : () => showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        builder: (_) => AssistantMemorySheet(
+                          initialText: _llmService.savedMemory,
+                          onSave: _llmService.saveMemory,
+                        ),
+                      ),
+                icon: const Icon(Icons.bookmark_outline, size: 18),
+                label: const Text('Memory'),
+              ),
+              TextButton.icon(
+                onPressed: _isBusy
+                    ? null
+                    : () => unawaited(_showMusicLibrary()),
+                icon: const Icon(Icons.library_music_outlined, size: 18),
+                label: const Text('Music'),
+              ),
+              TextButton.icon(
+                onPressed: _isBusy
+                    ? null
+                    : () => unawaited(_controller.testPhoneVoice()),
+                icon: const Icon(Icons.volume_up_outlined, size: 18),
+                label: const Text('Test voice'),
+              ),
+            ],
           ),
         ],
       ),
@@ -434,17 +562,19 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
       case LocalLlmState.error:
         icon = Icons.error_outline_rounded;
         accent = colors.error;
-        message = 'The local AI needs attention. Open Model to retry or replace it.';
+        message =
+            'The local AI needs attention. Open Model to retry or replace it.';
         break;
       case LocalLlmState.unsupported:
         icon = Icons.phone_android_rounded;
         accent = colors.error;
-        message = 'Local `.task` inference is available in the Android/iOS app.';
+        message = 'Local AI inference is available in the Android/iOS app.';
         break;
       case LocalLlmState.notInstalled:
         icon = Icons.psychology_outlined;
         accent = colors.tertiary;
-        message = 'Import your trained `.task` model to enable real offline conversation.';
+        message =
+            'Import a local AI model to chat offline in English or Arabic.';
         break;
     }
 
@@ -480,10 +610,11 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
 
   Widget _buildLocalNotice(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final connected = _bleStatus == BleStatus.connected ||
+    final connected =
+        _bleStatus == BleStatus.connected ||
         _bleStatus == BleStatus.dataUpdated;
-    final connecting = _bleStatus == BleStatus.scanning ||
-        _bleStatus == BleStatus.connecting;
+    final connecting =
+        _bleStatus == BleStatus.scanning || _bleStatus == BleStatus.connecting;
 
     final IconData icon;
     final Color accent;
@@ -592,8 +723,8 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
         return _event.transcript?.trim().isNotEmpty == true
             ? _event.transcript!.trim()
             : (_event.language == EllieLanguage.arabic
-                ? 'أستمع الآن… قولي «${widget.assistantName}» ثم طلبك.'
-                : 'Listening… say “${widget.assistantName}” and your request.');
+                  ? 'أستمع الآن… قولي «${widget.assistantName}» ثم طلبك.'
+                  : 'Listening… say “${widget.assistantName}” and your request.');
       case EllieVoicePhase.thinking:
         return _event.language == EllieLanguage.arabic
             ? '${widget.assistantName} يفكّر…'
@@ -614,68 +745,39 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
     }
   }
 
-  Widget _buildComposer(BuildContext context, {required bool listening}) {
-    final colors = Theme.of(context).colorScheme;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        14,
-        0,
-        14,
-        10 + MediaQuery.viewInsetsOf(context).bottom,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: <Widget>[
-          Semantics(
-            button: true,
-            label: listening
-                ? 'Stop listening · إيقاف الاستماع'
-                : 'Talk to ${widget.assistantName} · تحدث إلى ${widget.assistantName}',
-            child: IconButton.filled(
-              onPressed: _isBusy ? null : () => unawaited(_toggleListening()),
-              style: IconButton.styleFrom(
-                backgroundColor: listening ? colors.error : colors.primary,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(50, 50),
-              ),
-              icon: Icon(
-                listening ? Icons.stop_rounded : Icons.mic_rounded,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: TextField(
-              controller: _textController,
-              enabled: !_isBusy,
-              minLines: 1,
-              maxLines: 4,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => unawaited(_sendTypedMessage()),
-              decoration: InputDecoration(
-                hintText:
-                    'Message ${widget.assistantName} · اكتب إلى ${widget.assistantName}',
-                filled: true,
-                fillColor: colors.surfaceContainerHighest.withValues(alpha: 0.55),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  borderSide: BorderSide.none,
+  Widget _buildComposer(BuildContext context, {required bool listening}) =>
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _textController,
+                enabled: !_isBusy,
+                minLines: 1,
+                maxLines: 4,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => unawaited(_sendTypedMessage()),
+                decoration: InputDecoration(
+                  hintText: 'Message ${widget.assistantName} · اكتب هنا',
                 ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            tooltip: 'Send · إرسال',
-            onPressed: _isBusy ? null : () => unawaited(_sendTypedMessage()),
-            icon: const Icon(Icons.send_rounded),
-          ),
-        ],
-      ),
-    );
-  }
+            const SizedBox(width: 8),
+            IconButton.filled(
+              tooltip: 'Send · إرسال',
+              onPressed: _isBusy ? null : () => unawaited(_sendTypedMessage()),
+              style: IconButton.styleFrom(
+                backgroundColor: HomeDesign.blue,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(48, 48),
+              ),
+              icon: const Icon(Icons.arrow_upward_rounded),
+            ),
+          ],
+        ),
+      );
 }
 
 class _LocalAiManagerSheet extends StatefulWidget {
@@ -706,13 +808,15 @@ class _LocalAiManagerSheetState extends State<_LocalAiManagerSheet> {
     final imported = await widget.service.importModel();
     if (!mounted) return;
     setState(() => _working = false);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(
-        imported
-            ? 'Local AI model installed. You can now talk offline.'
-            : widget.service.lastError ?? 'No model was selected.',
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          imported
+              ? 'Local AI model installed. You can now talk offline.'
+              : widget.service.lastError ?? 'No model was selected.',
+        ),
       ),
-    ));
+    );
   }
 
   Future<void> _showUnsupportedImportInfo() async {
@@ -722,10 +826,10 @@ class _LocalAiManagerSheetState extends State<_LocalAiManagerSheet> {
         title: const Text('Use the phone build for this model'),
         content: const Text(
           'Chrome is available as a user-interface preview in this local-only '
-          'build. The supplied .task model was converted for Android/iOS CPU '
+          'build. GGUF and Gemma .task models use Android/iOS CPU '
           'inference, while a browser needs WebGPU and a separately compatible '
           'web model source.\n\nInstall the Android APK or a signed iOS IPA, '
-          'then import smart.task on that physical phone.',
+          'then import your .gguf or .task file on that phone.',
         ),
         actions: <Widget>[
           FilledButton(
@@ -782,7 +886,8 @@ class _LocalAiManagerSheetState extends State<_LocalAiManagerSheet> {
     final state = widget.service.state;
     final ready = widget.service.isReady;
     final modelImportSupported = widget.service.isSupported;
-    final busy = _working ||
+    final busy =
+        _working ||
         state == LocalLlmState.loading ||
         state == LocalLlmState.generating;
     final String status;
@@ -800,7 +905,7 @@ class _LocalAiManagerSheetState extends State<_LocalAiManagerSheet> {
         status = 'Could not load the current model';
         break;
       case LocalLlmState.unsupported:
-        status = 'Use an Android or iOS build for mobile `.task` inference';
+        status = 'Use an Android or iOS build for local AI inference';
         break;
       case LocalLlmState.notInstalled:
         status = 'No local model installed';
@@ -832,7 +937,7 @@ class _LocalAiManagerSheetState extends State<_LocalAiManagerSheet> {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    Text('Gemma `.task` model · no assistant cloud'),
+                    Text('Qwen GGUF or Gemma · runs on this phone'),
                   ],
                 ),
               ),
@@ -877,8 +982,8 @@ class _LocalAiManagerSheetState extends State<_LocalAiManagerSheet> {
           const SizedBox(height: 14),
           Text(
             modelImportSupported
-                ? 'Train or fine-tune Gemma 3 1B on your laptop, convert it to a quantized MediaPipe `.task` file, copy it to this phone, then tap Import. On iPhone the picker shows all documents; the app accepts only a real `.task` file. The model is stored privately and runs without an API key.'
-                : 'This Chrome build previews the interface only. Import and local inference for the supplied mobile `.task` model are available in the Android and iOS builds.',
+                ? 'Copy your Qwen3-1.7B Q4_K_M .gguf file to this phone, then tap Import. Use pretrained weights or your laptop fine-tune. Existing Gemma .task models also work. Try Qwen3-0.6B if the larger model is too slow for this phone.'
+                : 'This Chrome build previews the interface only. Import and local AI inference are available in the Android and iOS builds.',
             style: TextStyle(height: 1.45),
           ),
           const SizedBox(height: 10),
@@ -891,8 +996,8 @@ class _LocalAiManagerSheetState extends State<_LocalAiManagerSheet> {
             onPressed: busy
                 ? null
                 : modelImportSupported
-                    ? _importModel
-                    : _showUnsupportedImportInfo,
+                ? _importModel
+                : _showUnsupportedImportInfo,
             icon: Icon(
               modelImportSupported
                   ? Icons.file_open_rounded
@@ -901,8 +1006,8 @@ class _LocalAiManagerSheetState extends State<_LocalAiManagerSheet> {
             label: Text(
               modelImportSupported
                   ? ready
-                      ? 'Replace `.task` model'
-                      : 'Import `.task` model'
+                        ? 'Replace model'
+                        : 'Import model'
                   : 'Why import is unavailable in Chrome',
             ),
           ),
@@ -958,18 +1063,20 @@ class _LocalMusicLibrarySheetState extends State<_LocalMusicLibrarySheet> {
     try {
       final count = await widget.service.importTracks();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-          count == 0
-              ? 'No audio files were added.'
-              : 'Added $count local ${count == 1 ? 'song' : 'songs'}.',
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            count == 0
+                ? 'No audio files were added.'
+                : 'Added $count local ${count == 1 ? 'song' : 'songs'}.',
+          ),
         ),
-      ));
+      );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Could not import that audio file: $error'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not import that audio file: $error')),
+      );
     } finally {
       if (mounted) setState(() => _importing = false);
     }
@@ -985,9 +1092,9 @@ class _LocalMusicLibrarySheetState extends State<_LocalMusicLibrarySheet> {
       }
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Could not play ${track.title}: $error'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not play ${track.title}: $error')),
+      );
     }
   }
 
@@ -1105,8 +1212,9 @@ class _LocalMusicLibrarySheetState extends State<_LocalMusicLibrarySheet> {
                               backgroundColor: selected
                                   ? colors.primary
                                   : colors.surfaceContainerHighest,
-                              foregroundColor:
-                                  selected ? colors.onPrimary : colors.onSurface,
+                              foregroundColor: selected
+                                  ? colors.onPrimary
+                                  : colors.onSurface,
                               child: Icon(
                                 playing
                                     ? Icons.pause_rounded
@@ -1163,17 +1271,21 @@ class _MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final alignment = message.isUser ? Alignment.centerRight : Alignment.centerLeft;
+    final alignment = message.isUser
+        ? Alignment.centerRight
+        : Alignment.centerLeft;
     final bubbleColor = message.isSystem
         ? colors.errorContainer
         : message.isUser
-            ? colors.primary
-            : colors.surfaceContainerHighest;
+        ? colors.primary
+        : Theme.of(context).brightness == Brightness.dark
+        ? HomeDesign.panel
+        : colors.surfaceContainerHighest;
     final textColor = message.isSystem
         ? colors.onErrorContainer
         : message.isUser
-            ? colors.onPrimary
-            : colors.onSurface;
+        ? colors.onPrimary
+        : colors.onSurface;
 
     return Align(
       alignment: alignment,
@@ -1185,6 +1297,8 @@ class _MessageBubble extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
         decoration: BoxDecoration(
           color: bubbleColor,
+          gradient: message.isUser ? HomeDesign.gradient : null,
+          border: Border.all(color: colors.outlineVariant),
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(18),
             topRight: const Radius.circular(18),
@@ -1198,7 +1312,10 @@ class _MessageBubble extends StatelessWidget {
               : TextDirection.ltr,
           child: Text(
             message.text,
-            style: TextStyle(color: textColor, height: 1.35),
+            style: TextStyle(
+              color: message.isUser ? Colors.white : textColor,
+              height: 1.45,
+            ),
           ),
         ),
       ),
