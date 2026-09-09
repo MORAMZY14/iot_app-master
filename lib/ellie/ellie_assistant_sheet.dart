@@ -61,7 +61,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
     _messages.addAll(<_EllieMessage>[
       _EllieMessage(
         text:
-            'Hi, I’m ${widget.assistantName}. Import your trained local AI with the brain button, then talk normally or try “turn off TV and Lamp.”',
+            'Hi, I’m ${widget.assistantName}. Talk naturally or ask me to control devices.',
         language: EllieLanguage.english,
       ),
       _EllieMessage(
@@ -258,7 +258,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
       child: Padding(
         padding: EdgeInsets.only(bottom: keyboard),
         child: SizedBox(
-          height: (MediaQuery.sizeOf(context).height * .95 - keyboard).clamp(
+          height: (MediaQuery.sizeOf(context).height - keyboard).clamp(
             260.0,
             MediaQuery.sizeOf(context).height,
           ),
@@ -266,7 +266,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
             borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
             child: HomeBackground(
               child: SafeArea(
-                top: false,
+                top: true,
                 child: Column(
                   children: [
                     _buildHeader(context),
@@ -286,8 +286,10 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                             sliver: SliverList.builder(
                               itemCount: _messages.length,
-                              itemBuilder: (context, i) =>
-                                  _MessageBubble(message: _messages[i]),
+                              itemBuilder: (context, i) => _MessageBubble(
+                                message: _messages[i],
+                                assistantName: widget.assistantName,
+                              ),
                             ),
                           ),
                           if (_messages.isEmpty)
@@ -323,6 +325,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
                     if (keyboard == 0) ...[
                       _buildLanguageSelector(context),
                       HomeVoiceButton(
+                        large: true,
                         listening: listening,
                         onPressed: _isBusy && !listening
                             ? null
@@ -349,193 +352,169 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
         _bleStatus == BleStatus.dataUpdated;
     final connecting =
         _bleStatus == BleStatus.scanning || _bleStatus == BleStatus.connecting;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: HomeCard(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const HomeGlowIcon(Icons.bluetooth, size: 34),
-                const SizedBox(height: 10),
-                const Text(
-                  'Bluetooth',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+    Widget card(
+      IconData icon,
+      Color color,
+      String title,
+      String subtitle,
+      VoidCallback? tap,
+    ) => Expanded(
+      child: InkWell(
+        onTap: tap,
+        child: HomeCard(
+          padding: const EdgeInsets.all(9),
+          child: Row(
+            children: [
+              HomeGlowIcon(icon, color: color, size: 32),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: Color(0xFFA7B8D7),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  connected
-                      ? 'Connected'
-                      : connecting
-                      ? 'Connecting…'
-                      : 'Not connected',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                TextButton(
-                  onPressed: connected || connecting
-                      ? null
-                      : () => unawaited(_connectBluetooth()),
-                  child: Text(connected ? 'Backup ready' : 'Connect'),
-                ),
-              ],
-            ),
+              ),
+              const Icon(Icons.chevron_right, size: 15),
+            ],
           ),
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: HomeCard(
-            padding: const EdgeInsets.all(12),
-            glowColor: ready ? HomeDesign.blue : null,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const HomeGlowIcon(
-                  Icons.psychology_outlined,
-                  color: HomeDesign.violet,
-                  size: 34,
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'Local AI',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  ready
-                      ? (_llmService.modelName ?? 'Ready on this phone')
-                      : switch (_llmService.state) {
-                          LocalLlmState.notInstalled =>
-                            'Import a model to begin',
-                          LocalLlmState.loading => 'Loading…',
-                          LocalLlmState.generating => 'Thinking…',
-                          LocalLlmState.error => 'Model needs attention',
-                          LocalLlmState.unsupported =>
-                            'Unavailable on this platform',
-                          LocalLlmState.ready => 'Ready',
-                        },
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12),
-                ),
-                TextButton(
-                  onPressed: _isBusy
-                      ? null
-                      : () => unawaited(_showLocalAiManager()),
-                  child: Text(ready ? 'Manage model' : 'Import model'),
-                ),
-              ],
-            ),
-          ),
+      ),
+    );
+    return Row(
+      children: [
+        card(
+          Icons.bluetooth,
+          HomeDesign.blue,
+          connected ? 'Bluetooth connected' : 'Bluetooth',
+          connecting
+              ? 'Connecting…'
+              : connected
+              ? 'Backup ready'
+              : 'Tap to connect',
+          connected || connecting ? null : () => unawaited(_connectBluetooth()),
+        ),
+        const SizedBox(width: 8),
+        card(
+          Icons.storage_rounded,
+          const Color(0xFF1ADCA5),
+          ready ? 'Local AI ready' : 'Local AI',
+          ready
+              ? (_llmService.modelName ?? 'On this device')
+              : 'Import your local model',
+          _isBusy ? null : () => unawaited(_showLocalAiManager()),
         ),
       ],
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 8, 8),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: colors.primaryContainer,
-                child: Icon(
-                  Icons.graphic_eq_rounded,
-                  color: colors.onPrimaryContainer,
-                ),
+  Widget _buildHeader(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            IconButton(
+              tooltip: 'Close',
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.arrow_back),
+            ),
+            const Spacer(),
+            for (final item in [
+              (
+                Icons.psychology_outlined,
+                'Import AI',
+                () => unawaited(_showLocalAiManager()),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Voice Assistant',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
+              (
+                Icons.music_note_outlined,
+                'Music',
+                () => unawaited(_showMusicLibrary()),
               ),
-              IconButton(
-                tooltip: 'Close',
-                onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(Icons.close_rounded),
-              ),
-            ],
-          ),
-          Wrap(
-            spacing: 4,
-            children: [
-              TextButton.icon(
-                onPressed: _isBusy
-                    ? null
-                    : () => unawaited(_showLocalAiManager()),
-                icon: const Icon(Icons.psychology_outlined, size: 18),
-                label: const Text('Import AI'),
-              ),
-              TextButton.icon(
-                onPressed: _isBusy
-                    ? null
-                    : () => showModalBottomSheet<void>(
-                        context: context,
-                        isScrollControlled: true,
-                        builder: (_) => AssistantMemorySheet(
-                          initialText: _llmService.savedMemory,
-                          onSave: _llmService.saveMemory,
-                        ),
-                      ),
-                icon: const Icon(Icons.bookmark_outline, size: 18),
-                label: const Text('Memory'),
-              ),
-              TextButton.icon(
-                onPressed: _isBusy
-                    ? null
-                    : () => unawaited(_showMusicLibrary()),
-                icon: const Icon(Icons.library_music_outlined, size: 18),
-                label: const Text('Music'),
-              ),
-              TextButton.icon(
-                onPressed: _isBusy
-                    ? null
-                    : () => unawaited(_controller.testPhoneVoice()),
-                icon: const Icon(Icons.volume_up_outlined, size: 18),
-                label: const Text('Test voice'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLanguageSelector(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Row(
-        children: EllieLanguageMode.values.map((mode) {
-          final selected = mode == _languageMode;
-          return Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3),
-              child: ChoiceChip(
-                label: SizedBox(
-                  width: double.infinity,
-                  child: Text(
-                    EllieLanguageTools.modeLabel(mode),
-                    textAlign: TextAlign.center,
+            ])
+              Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: InkWell(
+                  onTap: _isBusy ? null : item.$3,
+                  child: Column(
+                    children: [
+                      HomeGlowIcon(item.$1, size: 34),
+                      const SizedBox(height: 4),
+                      Text(item.$2, style: const TextStyle(fontSize: 9)),
+                    ],
                   ),
                 ),
-                selected: selected,
-                onSelected: (_) => unawaited(_setLanguageMode(mode)),
               ),
+            PopupMenuButton<String>(
+              tooltip: 'Assistant options',
+              onSelected: (v) {
+                if (v == 'voice')
+                  unawaited(_controller.testPhoneVoice());
+                else
+                  showModalBottomSheet<void>(
+                    context: context,
+                    isScrollControlled: true,
+                    builder: (_) => AssistantMemorySheet(
+                      initialText: _llmService.savedMemory,
+                      onSave: _llmService.saveMemory,
+                    ),
+                  );
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'memory', child: Text('Memory')),
+                PopupMenuItem(value: 'voice', child: Text('Test voice')),
+              ],
             ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
+          ],
+        ),
+        const SizedBox(height: 5),
+        const Text(
+          'Voice Assistant',
+          style: TextStyle(fontSize: 25, fontWeight: FontWeight.w500),
+        ),
+        const SizedBox(height: 3),
+        const Text(
+          'Your offline AI for a smarter home',
+          style: TextStyle(fontSize: 13, color: Color(0xFFA7B8D7)),
+        ),
+      ],
+    ),
+  );
+  Widget _buildLanguageSelector(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+    child: Row(
+      children: [
+        for (final mode in EllieLanguageMode.values)
+          Expanded(
+            child: ReferenceChoice(
+              label: EllieLanguageTools.modeLabel(mode),
+              icon: mode == EllieLanguageMode.values.first
+                  ? Icons.language
+                  : Icons.translate,
+              selected: mode == _languageMode,
+              onTap: () => unawaited(_setLanguageMode(mode)),
+            ),
+          ),
+      ],
+    ),
+  );
   Widget _buildAiNotice(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final LocalLlmState state = _llmService.state;
@@ -760,7 +739,8 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) => unawaited(_sendTypedMessage()),
                 decoration: InputDecoration(
-                  hintText: 'Message ${widget.assistantName} · اكتب هنا',
+                  hintText: 'Type a message…',
+                  prefixIcon: const Icon(Icons.edit_outlined),
                 ),
               ),
             ),
@@ -773,7 +753,7 @@ class _EllieAssistantSheetState extends State<EllieAssistantSheet> {
                 foregroundColor: Colors.white,
                 minimumSize: const Size(48, 48),
               ),
-              icon: const Icon(Icons.arrow_upward_rounded),
+              icon: const Icon(Icons.send_rounded),
             ),
           ],
         ),
@@ -1264,61 +1244,77 @@ class _EllieMessage {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message});
-
+  const _MessageBubble({required this.message, required this.assistantName});
   final _EllieMessage message;
-
+  final String assistantName;
   @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final alignment = message.isUser
-        ? Alignment.centerRight
-        : Alignment.centerLeft;
-    final bubbleColor = message.isSystem
-        ? colors.errorContainer
-        : message.isUser
-        ? colors.primary
-        : Theme.of(context).brightness == Brightness.dark
-        ? HomeDesign.panel
-        : colors.surfaceContainerHighest;
-    final textColor = message.isSystem
-        ? colors.onErrorContainer
-        : message.isUser
-        ? colors.onPrimary
-        : colors.onSurface;
-
-    return Align(
-      alignment: alignment,
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width * 0.78,
-        ),
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
-        decoration: BoxDecoration(
-          color: bubbleColor,
-          gradient: message.isUser ? HomeDesign.gradient : null,
-          border: Border.all(color: colors.outlineVariant),
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(18),
-            topRight: const Radius.circular(18),
-            bottomLeft: Radius.circular(message.isUser ? 18 : 4),
-            bottomRight: Radius.circular(message.isUser ? 4 : 18),
-          ),
-        ),
-        child: Directionality(
-          textDirection: message.language == EllieLanguage.arabic
-              ? TextDirection.rtl
-              : TextDirection.ltr,
-          child: Text(
-            message.text,
-            style: TextStyle(
-              color: message.isUser ? Colors.white : textColor,
-              height: 1.45,
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 17),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!message.isUser) ...[
+          const SizedBox(
+            width: 44,
+            height: 44,
+            child: ReferenceArt(
+              asset: 'assets/images/reference_4.png',
+              crop: Rect.fromLTWH(166, 439, 86, 88),
             ),
           ),
+          const SizedBox(width: 9),
+        ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: message.isUser
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
+            children: [
+              if (!message.isUser)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: Text(
+                    assistantName,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 11,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: message.isSystem
+                      ? Theme.of(context).colorScheme.errorContainer
+                      : const Color(0xFF1A2539),
+                  gradient: message.isUser ? HomeDesign.gradient : null,
+                  border: Border.all(color: HomeDesign.border),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Directionality(
+                  textDirection: message.language == EllieLanguage.arabic
+                      ? TextDirection.rtl
+                      : TextDirection.ltr,
+                  child: Text(
+                    message.text,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.45,
+                      color: message.isSystem
+                          ? Theme.of(context).colorScheme.onErrorContainer
+                          : Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-    );
-  }
+        if (message.isUser) ...[
+          const SizedBox(width: 9),
+          const HomeGlowIcon(Icons.person_outline, size: 35),
+        ],
+      ],
+    ),
+  );
 }

@@ -44,10 +44,20 @@ class FakeBle implements BleService {
   }) async => {
     'online': true,
     'ssid': 'Home network',
-    'ip': '192.168.1.24',
+    'ip': '192.168.1.60',
     'gateway': '192.168.1.1',
-    'rssi': -45,
+    'rssi': -56,
   };
+  @override
+  Future<List<Map<String, dynamic>>> scanWifi() async => [
+    for (final (i, n) in [
+      'HomeWiFi',
+      'SmartHome',
+      'Office',
+      'Other network',
+    ].indexed)
+      {'ssid': n, 'rssi': -56 - i * 7, 'secure': true},
+  ];
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -56,7 +66,7 @@ class FakeDevices implements ESP32DeviceService {
   final devices = [
     {
       'id': 'lamp',
-      'name': 'Floor lamp',
+      'name': 'Main Light',
       'room': 'Living Room',
       'state': true,
       'type': 0,
@@ -65,11 +75,29 @@ class FakeDevices implements ESP32DeviceService {
     },
     {
       'id': 'fan',
-      'name': 'Ceiling fan',
+      'name': 'TV',
       'room': 'Living Room',
       'state': false,
       'type': 1,
       'channel': 1,
+      'moduleId': 'io_1',
+    },
+    {
+      'id': 'ac',
+      'name': 'Air Conditioner',
+      'room': 'Living Room',
+      'state': true,
+      'type': 1,
+      'channel': 5,
+      'moduleId': 'io_1',
+    },
+    {
+      'id': 'curtains',
+      'name': 'Curtains',
+      'room': 'Living Room',
+      'state': false,
+      'type': 2,
+      'channel': 6,
       'moduleId': 'io_1',
     },
     {
@@ -192,19 +220,19 @@ void main() {
           ),
           smartHomeDataProvider.overrideWith(
             (ref) => Stream.value({
-              'sensors': {'temperature': 24.2, 'humidity': 48},
+              'sensors': {'temperature': 23.5, 'humidity': 48},
               'status': {
                 'online': true,
-                'ip': '192.168.1.24',
-                'rssi': -45,
-                'ping': 16,
+                'ip': '192.168.1.60',
+                'rssi': -56,
+                'ping': 24,
               },
             }),
           ),
           httpDataProvider.overrideWith(
             (ref) async => {'sensors': {}, 'status': {}},
           ),
-          userEsp32CodeProvider.overrideWith((ref) async => 'ESP32-DEMO'),
+          userEsp32CodeProvider.overrideWith((ref) async => 'ESP32-ABCD-1234'),
           selectedNavIndexProvider.overrideWith((ref) => tab),
           roomImageProvider.overrideWith((ref, room) async => null),
         ],
@@ -248,6 +276,12 @@ void main() {
       );
     });
     await tester.runAsync(() async {
+      for (final i in [1, 3, 4, 10]) {
+        await precacheImage(
+          AssetImage('assets/images/reference_$i.png'),
+          tester.element(find.byType(MaterialApp)),
+        );
+      }
       for (final name in ['living', 'bedroom', 'kitchen', 'bathroom']) {
         await precacheImage(
           AssetImage('assets/images/room_$name.png'),
@@ -372,7 +406,7 @@ void main() {
           'ioModules': {
             'io_1': {
               'id': 'io_1',
-              'name': 'Living room module',
+              'name': 'I/O Module 1',
               'busId': 0,
               'address': 32,
               'enabled': true,
@@ -380,7 +414,7 @@ void main() {
             },
             'io_2': {
               'id': 'io_2',
-              'name': 'Bedroom module',
+              'name': 'I/O Module 2',
               'busId': 1,
               'address': 33,
               'enabled': true,
@@ -396,6 +430,12 @@ void main() {
   for (final (name, page, tab, startup) in screens) {
     testWidgets('$name actual Flutter screen', (tester) async {
       await mount(tester, page, tab: tab, startup: startup);
+      if (name == '08-provision' || name == '09-wifi') {
+        await tester.tap(
+          find.text(name == '08-provision' ? 'Scan now' : 'Scan'),
+        );
+        await tester.pumpAndSettle();
+      }
       expect(tester.takeException(), isNull);
       await expectLater(
         find.byType(MaterialApp),

@@ -201,84 +201,197 @@ class _ProvisionPageState extends ConsumerState<ProvisionPage> {
   Widget build(BuildContext context) {
     final ble = ref.watch(bleServiceProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Provision ESP32')),
+      appBar: AppBar(
+        toolbarHeight: 40,
+        centerTitle: true,
+        title: const Text(
+          'Provision ESP32',
+          style: TextStyle(fontSize: 15, color: HomeDesign.cyan),
+        ),
+      ),
       body: HomeBackground(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
           children: [
             const HomeHero(
-              title: 'Let’s connect your home',
-              subtitle: 'Set up your ESP32 with a 2.4 GHz Wi-Fi network.',
+              title: 'Set up ESP32 Wi-Fi',
+              subtitle:
+                  'The ESP32 will save the network credentials and restart automatically.',
               icon: Icons.router_outlined,
-              height: 160,
+              height: 89,
+              photograph: false,
+              showTop: false,
             ),
-            const HomeSection('01  CONNECT TO YOUR ESP32'),
             HomeCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              glowColor: HomeDesign.violet,
+              child: Row(
                 children: [
-                  const Text(
-                    'Connect your phone to the setup hotspot, or use Bluetooth.',
-                    style: TextStyle(height: 1.4),
-                  ),
-                  const SizedBox(height: 12),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const HomeGlowIcon(
-                      Icons.wifi_tethering_rounded,
-                      size: 38,
-                    ),
-                    title: const Text('ESP32_Config'),
-                    subtitle: const Text('Setup hotspot'),
-                    trailing: IconButton(
-                      tooltip: 'Copy hotspot name',
-                      onPressed: () => Clipboard.setData(
-                        const ClipboardData(text: 'ESP32_Config'),
-                      ),
-                      icon: const Icon(Icons.copy_outlined, size: 18),
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      const Expanded(child: Text('AP password: 12345678')),
-                      IconButton(
-                        tooltip: 'Copy setup password',
-                        onPressed: () => Clipboard.setData(
-                          const ClipboardData(text: '12345678'),
+                  const HomeGlowIcon(Icons.router_outlined, size: 42),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    flex: 3,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Setup Access Point',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFFA6BBDD),
+                          ),
                         ),
-                        icon: const Icon(Icons.copy_outlined, size: 18),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        const FittedBox(
+                          child: Text(
+                            'ESP32_Config',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            const Flexible(
+                              child: Text(
+                                'AP password: 12345678',
+                                style: TextStyle(fontSize: 9),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Copy setup password',
+                              constraints: const BoxConstraints(
+                                minWidth: 26,
+                                minHeight: 32,
+                              ),
+                              padding: EdgeInsets.zero,
+                              onPressed: () => Clipboard.setData(
+                                const ClipboardData(text: '12345678'),
+                              ),
+                              icon: const Icon(Icons.copy_outlined, size: 13),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                  const Divider(),
-                  TextButton.icon(
-                    onPressed: ble.isConnected
-                        ? null
-                        : () => unawaited(ble.connect().catchError((_) {})),
-                    icon: const Icon(Icons.bluetooth),
-                    label: Text(
-                      ble.isConnected
-                          ? 'Bluetooth connected'
-                          : 'Connect Bluetooth (optional)',
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    flex: 2,
+                    child: Text(
+                      '1. Connect to this AP\n2. Enter your Wi-Fi below\n3. Save and restart',
+                      style: TextStyle(
+                        fontSize: 8,
+                        height: 1.8,
+                        color: Color(0xFFA6BBDD),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-            const HomeSection('02  CHOOSE A NETWORK'),
-            HomePrimaryButton(
-              label: _scanning ? 'Scanning…' : 'Scan nearby networks',
-              icon: Icons.wifi_find_rounded,
-              busy: _scanning,
-              onPressed: _scanning || _busy ? null : _scanNetworks,
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: ble.isConnected
+                        ? null
+                        : () => unawaited(ble.connect().catchError((_) {})),
+                    child: HomeCard(
+                      child: Row(
+                        children: [
+                          const HomeGlowIcon(Icons.bluetooth, size: 28),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  ble.isConnected
+                                      ? 'Bluetooth connected'
+                                      : 'Bluetooth optional',
+                                  style: const TextStyle(fontSize: 10),
+                                ),
+                                const Text(
+                                  'Use BLE for faster setup',
+                                  style: TextStyle(
+                                    fontSize: 8,
+                                    color: Color(0xFFA6BBDD),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: HomeCard(
+                    child: Row(
+                      children: [
+                        HomeGlowIcon(
+                          Icons.wifi,
+                          color: HomeDesign.cyan,
+                          size: 28,
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Setup AP', style: TextStyle(fontSize: 11)),
+                              Text(
+                                'ESP32_Config',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: Color(0xFFA6BBDD),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                'Scan source: $_source',
-                style: const TextStyle(fontSize: 12),
-              ),
+            const SizedBox(height: 13),
+            Row(
+              children: [
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Nearby Wi-Fi Networks',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        'Select your 2.4 GHz Wi-Fi network',
+                        style: TextStyle(fontSize: 9, color: Color(0xFFA6BBDD)),
+                      ),
+                    ],
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _scanning || _busy ? null : _scanNetworks,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: Text(
+                    _scanning ? 'Scanning…' : 'Scan now',
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: 8),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -299,10 +412,15 @@ class _ProvisionPageState extends ConsumerState<ProvisionPage> {
                       ? HomeDesign.blue
                       : null,
                   child: ListTile(
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
                     enabled: !_busy,
                     onTap: () => setState(() => _selectedNetwork = network),
                     leading: const Icon(Icons.wifi_rounded),
-                    title: Text(network.ssid),
+                    title: Text(
+                      network.ssid,
+                      style: const TextStyle(fontSize: 12),
+                    ),
                     subtitle: Text(
                       '${network.rssi} dBm • ${network.secure ? 'Secured' : 'Open'}',
                     ),
@@ -314,13 +432,13 @@ class _ProvisionPageState extends ConsumerState<ProvisionPage> {
                   ),
                 ),
               ),
-            const HomeSection('03  SAVE & RESTART'),
+            const HomeSection('Or enter network manually'),
             WifiCredentialsCard(
               ssid: _selectedNetwork?.ssid ?? '',
               secure: _selectedNetwork?.secure ?? true,
               busy: _busy,
               onSave: _saveNetwork,
-              buttonLabel: 'Save & restart ESP32',
+              buttonLabel: 'Save and restart ESP32',
             ),
           ],
         ),

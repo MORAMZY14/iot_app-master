@@ -50,7 +50,7 @@ flutter analyze
 flutter test
 ```
 
-All 34 Flutter tests passed, including the existing assistant tests, layout and interaction checks, and comparisons against 16 screen previews. The analyzer reports no errors; warnings and style notices remain. `validation/ui-analyze.txt` and `validation/ui-tests.txt` contain the results. Golden previews are in `test/goldens/ui/`.
+All 34 Flutter tests passed, including the existing assistant tests, layout and interaction checks, and comparisons against 16 screen previews. The analyzer reports no errors; warnings and style notices remain. `validation/ui-analyze.txt`, `validation/ui-tests.txt`, and the final no-golden-update run in `validation/ui-tests-final.txt` contain the results. Golden previews are in `test/goldens/ui/`; `SmartHome-UI-Preview.html` pairs each of the ten supplied references with its corresponding real Flutter render.
 
 The design adapts to screen size and text scaling, so smaller displays scroll instead of shrinking controls to match the phone illustrations. The microphone waveform is decorative, with an active color while listening; it is not an audio-level meter.
 

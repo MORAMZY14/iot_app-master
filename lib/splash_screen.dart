@@ -99,7 +99,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                       style: Theme.of(context).textTheme.headlineLarge
                           ?.copyWith(
                             color: Colors.white,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 38,
                             letterSpacing: 0.2,
                           ),
                     ),
@@ -164,7 +165,7 @@ class _SplashBackground extends StatelessWidget {
               stops: [0, .25, .8, 1],
             ).createShader(r),
             blendMode: BlendMode.dstIn,
-            child: Image.asset(HomeDesign.house, fit: BoxFit.cover),
+            child: ReferenceArt.house,
           ),
         ),
         child,
@@ -177,7 +178,7 @@ class _SplashLogo extends StatelessWidget {
   const _SplashLogo();
   @override
   Widget build(BuildContext context) =>
-      const HomeGlowIcon(Icons.home_rounded, size: 120);
+      const SizedBox(width: 168, height: 168, child: ReferenceArt.logo);
 }
 
 class _LoadingPill extends StatelessWidget {
@@ -189,9 +190,9 @@ class _LoadingPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.12),
+        color: HomeDesign.blue.withValues(alpha: .12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.14)),
+        border: Border.all(color: HomeDesign.blue.withValues(alpha: .8)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

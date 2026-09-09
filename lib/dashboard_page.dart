@@ -1,3 +1,4 @@
+import 'ui/reference_energy.dart';
 import 'ui/home_scenes.dart';
 import 'ui/smart_home_design.dart';
 import 'dart:convert';
@@ -1486,7 +1487,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
               child: SafeArea(
                 top: false,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  padding: const EdgeInsets.fromLTRB(0, 4, 0, 0),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -2871,14 +2872,28 @@ class _HomeContentState extends ConsumerState<_HomeContent>
       }
     }
 
-    return roomSet.toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return roomSet.toList()..sort((a, b) {
+      int order(String s) {
+        final n = s.toLowerCase();
+        if (RegExp(r'living|معيشة|صالون').hasMatch(n)) return 0;
+        if (RegExp(r'bed|نوم').hasMatch(n)) return 1;
+        if (RegExp(r'kitchen|مطبخ').hasMatch(n)) return 2;
+        if (RegExp(r'bath|حمام').hasMatch(n)) return 3;
+        return 4;
+      }
+
+      final cmp = order(a).compareTo(order(b));
+      return cmp == 0 ? a.toLowerCase().compareTo(b.toLowerCase()) : cmp;
+    });
   }
 
   String _effectiveSelectedRoom(List<String> rooms) {
     if (rooms.isEmpty) return '';
     if (rooms.contains(_selectedRoom)) return _selectedRoom;
-    return rooms.first;
+    return rooms.firstWhere(
+      (r) => RegExp(r'living|معيشة|صالون').hasMatch(r.toLowerCase()),
+      orElse: () => rooms.first,
+    );
   }
 
   void _syncSelectedRoom(List<String> rooms) {
@@ -3463,18 +3478,18 @@ class _HomeContentState extends ConsumerState<_HomeContent>
             physics: const AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.only(
               top: 12,
-              left: padding,
-              right: padding,
-              bottom: 24,
+              left: isDesktop ? padding : 14,
+              right: isDesktop ? padding : 14,
+              bottom: 8,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 HomeHero(
-                  title: 'Welcome home',
+                  title: 'Good Evening',
                   height: 140,
                   compact: true,
-                  subtitle: 'Your home, just the way you like it.',
+                  subtitle: 'Your home feels just right.',
                   trailing: IconButton.filledTonal(
                     tooltip: 'Settings',
                     onPressed: () =>
@@ -3482,7 +3497,7 @@ class _HomeContentState extends ConsumerState<_HomeContent>
                     icon: const Icon(Icons.settings_outlined),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 6),
                 HomeScenes(
                   scope:
                       ref
@@ -3495,7 +3510,7 @@ class _HomeContentState extends ConsumerState<_HomeContent>
                   devices: devicesList,
                   onToggle: _controlDevice,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 6),
                 _EspBar(
                   online: online,
                   ip: ip,
@@ -3504,20 +3519,20 @@ class _HomeContentState extends ConsumerState<_HomeContent>
                   bleStatus: widget.bleStatus,
                   onConnectBLE: widget.onConnectBLE,
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 6),
                 _StatsRow(temp: temp, hum: hum, todayKw: todayKw),
                 if (flame) ...[
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 8),
                   _FlameBanner(flame: flame),
                 ],
-                const SizedBox(height: 24),
+                const SizedBox(height: 9),
                 _RoomGallery(
                   selectedRoom: selectedRoom,
                   onRoomSelected: (r) => setState(() => _selectedRoom = r),
                   rooms: rooms,
                   devices: devicesList,
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 8),
                 if (_isLoadingDevices)
                   ClipRRect(
                     borderRadius: BorderRadius.circular(99),
@@ -3590,7 +3605,7 @@ class _HomeContentState extends ConsumerState<_HomeContent>
                     size: 48,
                     color: _DT.red,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 6),
                   Text(
                     'Something went wrong',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -3644,52 +3659,73 @@ class _EspBar extends StatelessWidget {
     final busy =
         bleStatus == BleStatus.scanning || bleStatus == BleStatus.connecting;
     return HomeCard(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(9),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              HomeGlowIcon(
-                Icons.memory_rounded,
-                color: online ? _DT.green : _DT.amber,
-                size: 36,
+              const HomeGlowIcon(
+                Icons.wifi,
+                color: Color(0xFF21E4D3),
+                size: 32,
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  online ? 'ESP32 online' : 'ESP32 offline',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      online ? 'System Connected' : 'System Offline',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    const SizedBox(height: 3),
+                    const Text(
+                      'Wi-Fi / Firebase with BLE backup',
+                      style: TextStyle(fontSize: 9, color: Color(0xFFA7B9D7)),
+                    ),
+                  ],
                 ),
               ),
-              TextButton.icon(
+              IconButton(
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 32),
+                padding: EdgeInsets.zero,
+                tooltip: connected ? 'BLE connected' : 'Connect BLE',
                 onPressed: connected || busy ? null : onConnectBLE,
-                icon: const Icon(Icons.bluetooth, size: 16),
-                label: Text(
-                  connected
-                      ? 'BLE connected'
-                      : busy
-                      ? 'Connecting…'
-                      : 'Connect BLE',
-                  style: const TextStyle(fontSize: 11),
-                ),
+                icon: const Icon(Icons.chevron_right, size: 18),
               ),
             ],
           ),
-          const Divider(height: 20),
+          const SizedBox(height: 5),
           Wrap(
-            spacing: 14,
-            runSpacing: 8,
+            spacing: 5,
+            runSpacing: 5,
             children: [
-              Text('IP  ${ip ?? '—'}', style: const TextStyle(fontSize: 11)),
-              Text(
-                'Signal  ${rssi == null ? '—' : '$rssi dBm'}',
-                style: const TextStyle(fontSize: 11),
-              ),
-              Text(
-                'Ping  ${ping == null ? '—' : '$ping ms'}',
-                style: const TextStyle(fontSize: 11),
-              ),
+              for (final t in [
+                online ? '● ESP online' : '● ESP offline',
+                connected ? '● BLE connected' : 'BLE offline',
+                ip ?? 'IP —',
+                rssi == null ? '— dBm' : '$rssi dBm',
+                ping == null ? '— ms' : '$ping ms',
+              ])
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF141E2F),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: HomeDesign.border),
+                  ),
+                  child: Text(
+                    t,
+                    style: const TextStyle(
+                      fontSize: 8,
+                      color: Color(0xFFDCE5F7),
+                    ),
+                  ),
+                ),
             ],
           ),
         ],
@@ -3721,7 +3757,7 @@ class _StatsRow extends StatelessWidget {
             icon: Icons.thermostat_rounded,
             iconColor: const Color(0xFFFF6B6B),
             value: temp == null ? '—' : '${temp!.toStringAsFixed(1)}°',
-            label: 'Temp',
+            label: 'Temperature',
           ),
         ),
         const SizedBox(width: 10),
@@ -3730,7 +3766,7 @@ class _StatsRow extends StatelessWidget {
             icon: Icons.water_drop_rounded,
             iconColor: _DT.blue,
             value: hum == null ? '—' : '${hum!.toStringAsFixed(0)}%',
-            label: 'Humid',
+            label: 'Humidity',
           ),
         ),
         const SizedBox(width: 10),
@@ -3739,7 +3775,7 @@ class _StatsRow extends StatelessWidget {
             icon: Icons.bolt_rounded,
             iconColor: _DT.amber,
             value: todayKw == null ? '—' : '${todayKw!.toStringAsFixed(1)} kWh',
-            label: 'Today',
+            label: 'Today’s Energy',
           ),
         ),
       ],
@@ -3766,19 +3802,19 @@ class _StatTile extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            fontSize: 10,
+            fontSize: 8,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 4),
         Text(
           value,
-          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
         ),
       ],
     );
     return HomeCard(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+      padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 7),
       child: MediaQuery.textScalerOf(context).scale(1) > 1.3
           ? Column(
               mainAxisSize: MainAxisSize.min,
@@ -4052,46 +4088,84 @@ class _RoomGallery extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Column(
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.3;
+            final heading = const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Your Rooms',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Choose a room to see only its controls',
+                  style: TextStyle(fontSize: 9, color: Color(0xFFA8B9D4)),
+                ),
+              ],
+            );
+            final actions = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Tooltip(
+                  message: 'Add or manage rooms',
+                  child: OutlinedButton.icon(
+                    onPressed: () => unawaited(_manageRooms(context)),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: Size.zero,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 9,
+                      ),
+                      textStyle: const TextStyle(fontSize: 8),
+                    ),
+                    icon: const Icon(Icons.grid_view, size: 12),
+                    label: const Text('Manage Rooms'),
+                  ),
+                ),
+                const SizedBox(width: 5),
+                Tooltip(
+                  message: 'Add device',
+                  child: OutlinedButton.icon(
+                    onPressed: () => unawaited(_addDevice(context)),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: Size.zero,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 9,
+                      ),
+                      textStyle: const TextStyle(fontSize: 8),
+                    ),
+                    icon: const Icon(Icons.add, size: 12),
+                    label: const Text('Add Device'),
+                  ),
+                ),
+              ],
+            );
+            if (largeText || constraints.maxWidth < 380) {
+              return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Your Rooms',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                  ),
-                  SizedBox(height: 3),
-                  Text(
-                    'Choose a room to see only its controls',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton.filledTonal(
-              tooltip: 'Add or manage rooms',
-              onPressed: () => unawaited(_manageRooms(context)),
-              icon: const Icon(Icons.add_home_rounded),
-            ),
-            const SizedBox(width: 6),
-            IconButton.filled(
-              tooltip: 'Add device',
-              onPressed: () => unawaited(_addDevice(context)),
-              icon: const Icon(Icons.add_rounded),
-            ),
-          ],
+                children: [heading, const SizedBox(height: 8), actions],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: heading),
+                const SizedBox(width: 8),
+                actions,
+              ],
+            );
+          },
         ),
         if (rooms.isNotEmpty) ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: 9),
           LayoutBuilder(
             builder: (context, constraints) {
               final scale = MediaQuery.textScalerOf(
                 context,
               ).scale(1).clamp(1.0, 2.0);
-              final columns = constraints.maxWidth < 340 || scale > 1.3
+              final columns = constraints.maxWidth < 280 || scale > 1.3
                   ? 1
                   : constraints.maxWidth >= 900
                   ? 4
@@ -4099,15 +4173,15 @@ class _RoomGallery extends ConsumerWidget {
                   ? 3
                   : 2;
               final cardWidth =
-                  (constraints.maxWidth - 12 * (columns - 1)) / columns;
+                  (constraints.maxWidth - 9 * (columns - 1)) / columns;
               return Wrap(
-                spacing: 12,
-                runSpacing: 12,
+                spacing: 9,
+                runSpacing: 9,
                 children: [
                   for (final room in rooms)
                     SizedBox(
                       width: cardWidth,
-                      height: 132 + (scale - 1) * 64,
+                      height: 97 + (scale - 1) * 64,
                       child: RoomPhotoCard(
                         room: room,
                         deviceCount: devices
@@ -4166,140 +4240,84 @@ class _FocusedRoomPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => HomeCard(
-    padding: EdgeInsets.zero,
+    padding: const EdgeInsets.all(8),
     child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: Row(
-            children: [
-              HomeGlowIcon(_roomIconFor(room), size: 36),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '$room controls',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
+        Row(
+          children: [
+            HomeGlowIcon(_roomIconFor(room), size: 28),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$room controls',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
+                  Text(
+                    '${devices.where((d) => d is Map && d['state'] == true).length} devices active',
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Color(0xFF9EAFCC),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            PopupMenuButton<bool>(
+              tooltip: 'Room actions',
+              onSelected: (v) => unawaited(onSetAll(v)),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: true, child: Text('All on')),
+                PopupMenuItem(value: false, child: Text('All off')),
+              ],
+              child: const Padding(
+                padding: EdgeInsets.all(7),
+                child: Text(
+                  'View All ›',
+                  style: TextStyle(fontSize: 9, color: Color(0xFFA3B4D4)),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Wrap(
-            spacing: 8,
-            children: [
-              TextButton.icon(
-                onPressed: devices.isEmpty || pendingIds.isNotEmpty
-                    ? null
-                    : () => unawaited(onSetAll(true)),
-                icon: const Icon(Icons.power_rounded, size: 16),
-                label: const Text('All on'),
-              ),
-              TextButton.icon(
-                onPressed: devices.isEmpty || pendingIds.isNotEmpty
-                    ? null
-                    : () => unawaited(onSetAll(false)),
-                icon: const Icon(Icons.power_off_rounded, size: 16),
-                label: const Text('All off'),
-              ),
-            ],
+        const SizedBox(height: 8),
+        if (devices.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('No devices in this room yet'),
+          )
+        else
+          LayoutBuilder(
+            builder: (context, c) {
+              final count = MediaQuery.textScalerOf(context).scale(1) > 1.3
+                  ? 2
+                  : 4;
+              return Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final d in devices.whereType<Map>())
+                    SizedBox(
+                      width: (c.maxWidth - 6 * (count - 1)) / count,
+                      child: _RoomDeviceRow(
+                        device: Map<String, dynamic>.from(d),
+                        pending: pendingIds.contains(d['id']?.toString()),
+                        onToggle: onToggle,
+                        onOptions: onOptions,
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
-        ),
-        _buildDevices(context),
       ],
     ),
   );
-
-  Widget _buildDevices(BuildContext context) {
-    final activeCount = devices
-        .where((device) => device is Map && (device['state'] as bool? ?? false))
-        .length;
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Devices',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                ),
-              ),
-              Text(
-                '$activeCount active',
-                style: const TextStyle(
-                  color: _DT.green,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          if (devices.isEmpty)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 34),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.devices_other_rounded,
-                      size: 42,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.25),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
-                      'No devices in this room yet',
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final columns =
-                    constraints.maxWidth < 310 ||
-                        MediaQuery.textScalerOf(context).scale(1) > 1.3
-                    ? 1
-                    : 2;
-                return Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    for (final device in devices.whereType<Map>())
-                      SizedBox(
-                        width:
-                            (constraints.maxWidth - 10 * (columns - 1)) /
-                            columns,
-                        child: _RoomDeviceRow(
-                          device: Map<String, dynamic>.from(device),
-                          pending: pendingIds.contains(
-                            device['id']?.toString(),
-                          ),
-                          onToggle: onToggle,
-                          onOptions: onOptions,
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-        ],
-      ),
-    );
-  }
 }
 
 class _RoomDeviceRow extends StatelessWidget {
@@ -4350,64 +4368,59 @@ class _RoomDeviceRow extends StatelessWidget {
     }
 
     return HomeCard(
-      padding: const EdgeInsets.all(12),
-      glowColor: state ? HomeDesign.blue : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              HomeGlowIcon(_iconFor(type), color: color, size: 32),
-              const Spacer(),
-              IconButton(
-                tooltip: 'Edit $name',
-                onPressed: id.isEmpty ? null : showOptions,
-                icon: const Icon(Icons.more_horiz, size: 18),
-              ),
-            ],
-          ),
-          Text(
-            name,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  pending
-                      ? 'Updating…'
-                      : state
-                      ? 'On'
-                      : 'Off',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+      padding: const EdgeInsets.all(6),
+      child: InkWell(
+        onLongPress: showOptions,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              _iconFor(type),
+              size: 25,
+              color: color,
+              shadows: [Shadow(color: color, blurRadius: 12)],
+            ),
+            const SizedBox(height: 5),
+            Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 9),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    pending
+                        ? '…'
+                        : state
+                        ? 'On'
+                        : 'Off',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: state
+                          ? const Color(0xFF36D799)
+                          : const Color(0xFFA5B4D0),
+                    ),
                   ),
                 ),
-              ),
-              if (pending)
-                const Padding(
-                  padding: EdgeInsets.all(14),
-                  child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                SizedBox(
+                  width: 30,
+                  height: 24,
+                  child: FittedBox(
+                    child: Switch(
+                      value: state,
+                      onChanged: pending || id.isEmpty
+                          ? null
+                          : (v) => unawaited(onToggle(id, v)),
+                      activeTrackColor: const Color(0xFF26CD75),
+                    ),
                   ),
-                )
-              else
-                Switch(
-                  value: state,
-                  activeTrackColor: HomeDesign.blue,
-                  onChanged:
-                      id.isEmpty || device['enabled'] == false || channel < 0
-                      ? null
-                      : (value) => unawaited(onToggle(id, value)),
                 ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -4512,80 +4525,10 @@ class _EnergyScreen extends ConsumerWidget {
   const _EnergyScreen();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final data = ref.watch(httpDataProvider).asData?.value;
-    final energy = data?['energy'];
-    final today = energy is Map ? energy['today'] : null;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-      children: [
-        const HomeHero(
-          title: 'Energy',
-          subtitle: 'A clearer view of your home’s energy.',
-          icon: Icons.bolt_outlined,
-        ),
-        const HomeSection('ENERGY OVERVIEW'),
-        HomeCard(
-          glowColor: HomeDesign.blue,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Today’s usage',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                today is num ? '${today.toStringAsFixed(2)} kWh' : '— kWh',
-                style: const TextStyle(
-                  fontSize: 34,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Divider(),
-              const SizedBox(height: 20),
-              const Center(
-                child: HomeGlowIcon(Icons.bar_chart_rounded, size: 56),
-              ),
-              const SizedBox(height: 14),
-              const Center(
-                child: Text(
-                  'Usage history is not available',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Daily, weekly and monthly charts will need readings from a supported energy meter.',
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        const HomeCard(
-          child: Column(
-            children: [
-              HomeGlowIcon(Icons.electric_meter_outlined, color: _DT.amber),
-              SizedBox(height: 14),
-              Text(
-                'Energy meter setup',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'This firmware does not yet include an energy-meter driver. Temperature and humidity sensors cannot measure electricity use.',
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 10),
-              Text(
-                'Choose a compatible meter and add its firmware integration before enabling live energy monitoring.',
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ],
+    final e = ref.watch(httpDataProvider).asData?.value['energy'];
+    return ReferenceEnergy(
+      data: e is Map ? e : {},
+      onSettings: () => ref.read(selectedNavIndexProvider.notifier).state = 3,
     );
   }
 }
@@ -4601,62 +4544,40 @@ class _AlertsScreen extends ConsumerWidget {
     final unreadCount = notifications.where((item) => !item.read).length;
 
     return ListView(
-      padding: EdgeInsets.only(
-        top: 12,
-        left: padding,
-        right: padding,
-        bottom: 24,
-      ),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 16),
       children: [
-        const HomeHero(
+        HomeHero(
           title: 'Notifications',
-          subtitle: 'Everything happening in your home.',
-          icon: Icons.notifications_outlined,
+          subtitle: '$unreadCount unread notifications',
+          trailing: IconButton(
+            tooltip: 'Settings',
+            onPressed: () =>
+                ref.read(selectedNavIndexProvider.notifier).state = 3,
+            icon: const Icon(Icons.settings_outlined),
+          ),
         ),
-        const SizedBox(height: 18),
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Activity',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    unreadCount == 0
-                        ? 'All notifications are read'
-                        : '$unreadCount unread notification${unreadCount == 1 ? '' : 's'}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.55),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (notifications.isNotEmpty) ...[
-              IconButton.filledTonal(
-                tooltip: 'Mark all read',
+        if (notifications.isNotEmpty)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              OutlinedButton.icon(
                 onPressed: () =>
                     ref.read(appNotificationsProvider.notifier).markAllRead(),
-                icon: const Icon(Icons.done_all_rounded),
+                icon: const Icon(Icons.check, size: 15),
+                label: const Text(
+                  'Mark all read',
+                  style: TextStyle(fontSize: 10),
+                ),
               ),
               const SizedBox(width: 8),
-              IconButton.filledTonal(
-                tooltip: 'Clear notifications',
+              OutlinedButton.icon(
                 onPressed: () =>
                     ref.read(appNotificationsProvider.notifier).clearAll(),
-                icon: const Icon(Icons.delete_sweep_rounded),
+                icon: const Icon(Icons.delete_outline, size: 15),
+                label: const Text('Clear', style: TextStyle(fontSize: 10)),
               ),
             ],
-          ],
-        ),
-        const SizedBox(height: 16),
+          ),
         if (notifications.isEmpty)
           _GCard(
             padding: const EdgeInsets.all(28),
@@ -4698,7 +4619,7 @@ class _AlertsScreen extends ConsumerWidget {
         else
           for (final read in [false, true]) ...[
             if (notifications.any((n) => n.read == read))
-              HomeSection(read ? 'EARLIER' : 'UNREAD'),
+              HomeSection(read ? 'Earlier' : 'Unread'),
             ...notifications
                 .where((n) => n.read == read)
                 .map(
@@ -4719,21 +4640,21 @@ class _NotificationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _GCard(
-      padding: const EdgeInsets.all(14),
+    final category = item.title.toLowerCase().contains('flame')
+        ? 'Safety'
+        : item.title.toLowerCase().contains('bluetooth')
+        ? 'Connectivity'
+        : item.title.toLowerCase().contains('light')
+        ? 'Device'
+        : 'System';
+    return HomeCard(
+      padding: const EdgeInsets.all(10),
       glowColor: item.read ? null : item.color,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              color: item.color.withValues(alpha: 0.15),
-            ),
-            child: Icon(item.icon, color: item.color, size: 22),
-          ),
-          const SizedBox(width: 12),
+          HomeGlowIcon(item.icon, color: item.color, size: 46),
+          const SizedBox(width: 13),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -4743,46 +4664,49 @@ class _NotificationTile extends StatelessWidget {
                     Expanded(
                       child: Text(
                         item.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
+                    const SizedBox(width: 5),
+                    Text(
+                      _timeAgo(item.createdAt),
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: Color(0xFFA8BADA),
+                      ),
+                    ),
                     if (!item.read)
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: _DT.red,
-                          shape: BoxShape.circle,
-                        ),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Icon(Icons.circle, color: item.color, size: 7),
                       ),
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 5),
                 Text(
                   item.message,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.25,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.58),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    height: 1.3,
+                    color: Color(0xFFA8BADA),
                   ),
                 ),
                 const SizedBox(height: 5),
-                Text(
-                  _timeAgo(item.createdAt),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.42),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: item.color.withValues(alpha: .6)),
+                  ),
+                  child: Text(
+                    category,
+                    style: TextStyle(color: item.color, fontSize: 9),
                   ),
                 ),
               ],
@@ -5419,162 +5343,158 @@ class _SettingsScreen extends ConsumerWidget {
     final esp32Code = esp32CodeAsync.asData?.value;
     final connected =
         bleStatus == BleStatus.connected || bleStatus == BleStatus.dataUpdated;
+    Widget row(
+      IconData icon,
+      String title,
+      String subtitle,
+      VoidCallback? tap, {
+      Color color = HomeDesign.blue,
+      String? action,
+    }) => HomeSettingsRow(
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
+      onTap: tap,
+      color: color,
+      action: action,
+    );
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
       children: [
         const HomeHero(
           title: 'Settings',
-          subtitle: 'Make your home feel like you.',
-          icon: Icons.settings_outlined,
+          subtitle: 'Customize your smart home experience',
         ),
-        const HomeSection('APPEARANCE'),
-        HomeCard(
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            children: [
-              for (final item in [
-                (ThemeMode.light, 'Light', Icons.light_mode_outlined),
-                (ThemeMode.dark, 'Dark', Icons.dark_mode_outlined),
-                (ThemeMode.system, 'System', Icons.phone_android_outlined),
-              ])
-                ChoiceChip(
-                  showCheckmark: false,
-                  avatar: Icon(item.$3, size: 18),
-                  label: Text(item.$2),
-                  selected: themeMode == item.$1,
-                  onSelected: (_) =>
-                      ref.read(themeModeProvider.notifier).state = item.$1,
-                ),
-            ],
-          ),
-        ),
-        const HomeSection('DEVICE & VOICE'),
-        HomeCard(
-          padding: EdgeInsets.zero,
-          child: Column(
-            children: [
-              HomeSettingsRow(
-                icon: Icons.graphic_eq_rounded,
-                title: 'Voice assistant',
-                subtitle: 'Wake name: $assistantName · Tap to rename',
-                onTap: showAssistantNameDialog,
-              ),
-              const Divider(),
-              HomeSettingsRow(
-                icon: Icons.bluetooth,
-                title: 'Bluetooth',
-                subtitle: connected
-                    ? 'Connected · Offline backup ready'
-                    : 'Not connected · Tap to connect',
-                onTap: connected ? null : onConnectBLE,
-              ),
-              const Divider(),
-              HomeSettingsRow(
-                icon: Icons.refresh_rounded,
-                title: 'Manual refresh',
-                subtitle: 'Update device states and connection',
-                onTap: () => unawaited(onRefresh()),
-              ),
-            ],
-          ),
-        ),
-        const HomeSection('ESP32 SETTINGS'),
-        HomeCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const HomeGlowIcon(Icons.memory_rounded, size: 38),
-                  const SizedBox(width: 12),
+        ReferenceGroup(
+          title: 'APPEARANCE',
+          subtitle: 'Choose how the app looks.',
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            child: Row(
+              children: [
+                for (final (i, item) in [
+                  (ThemeMode.light, 'Light', Icons.light_mode_outlined),
+                  (ThemeMode.dark, 'Dark', Icons.dark_mode_outlined),
+                  (ThemeMode.system, 'System', Icons.desktop_windows_outlined),
+                ].indexed) ...[
+                  if (i > 0) const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
-                      esp32Code ?? 'Controller code unavailable',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    child: ReferenceChoice(
+                      label: item.$2,
+                      icon: item.$3,
+                      selected: themeMode == item.$1,
+                      onTap: () =>
+                          ref.read(themeModeProvider.notifier).state = item.$1,
                     ),
                   ),
                 ],
+              ],
+            ),
+          ),
+        ),
+        ReferenceGroup(
+          title: 'DEVICE & VOICE',
+          subtitle: 'Manage your connected devices.',
+          child: Column(
+            children: [
+              row(
+                Icons.mic_none,
+                'Voice assistant',
+                'Wake name: $assistantName',
+                showAssistantNameDialog,
+                color: HomeDesign.violet,
+                action: 'Rename',
               ),
-              if (esp32CodeAsync.hasError)
-                const Padding(
-                  padding: EdgeInsets.only(top: 10),
-                  child: Text(
-                    'Cloud settings are unavailable. Local settings and Bluetooth remain accessible.',
-                  ),
-                ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: showEditCodeDialog,
-                      child: const Text('Edit code'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: showTestConnectionDialog,
-                      child: const Text('Test connection'),
-                    ),
-                  ),
-                ],
+              const Divider(),
+              row(
+                Icons.bluetooth,
+                'Bluetooth',
+                connected ? 'Connected to smart devices' : 'Tap to connect',
+                connected ? null : onConnectBLE,
+                action: connected ? '● Connected' : null,
+              ),
+              const Divider(),
+              row(
+                Icons.refresh,
+                'Manual refresh',
+                'Sync all devices and update status',
+                () => unawaited(onRefresh()),
+                action: 'Refresh Now',
               ),
             ],
           ),
         ),
-        const HomeSection('ACCOUNT'),
-        HomeCard(
-          padding: EdgeInsets.zero,
-          child: HomeSettingsRow(
-            icon: Icons.logout_rounded,
+        ReferenceGroup(
+          title: 'ESP32 SETTINGS',
+          subtitle: 'Configure your ESP32 device.',
+          child: Row(
+            children: [
+              Expanded(
+                child: row(
+                  Icons.memory,
+                  'ESP32 Settings',
+                  esp32Code ?? 'Controller code unavailable',
+                  showEditCodeDialog,
+                  color: const Color(0xFF19DCA3),
+                  action: 'Edit Code',
+                ),
+              ),
+              TextButton(
+                onPressed: showTestConnectionDialog,
+                child: const Text('Test', style: TextStyle(fontSize: 10)),
+              ),
+            ],
+          ),
+        ),
+        ReferenceGroup(
+          title: 'ACCOUNT',
+          subtitle: 'Manage your account.',
+          child: row(
+            Icons.logout,
+            'Sign out',
+            'Sign out from this device',
+            showSignOutDialog,
             color: _DT.red,
-            title: 'Sign out',
-            subtitle: user?.email ?? 'Your account',
-            onTap: showSignOutDialog,
           ),
         ),
-        const HomeSection('SYSTEM'),
-        HomeCard(
-          padding: EdgeInsets.zero,
+        ReferenceGroup(
+          title: 'SYSTEM',
+          subtitle: 'Advanced configuration and information.',
           child: Column(
             children: [
-              HomeSettingsRow(
-                icon: Icons.router_outlined,
-                title: 'Provision ESP32',
-                subtitle: 'Connect a new controller',
-                onTap: () => Navigator.pushNamed(context, '/provision'),
+              row(
+                Icons.link,
+                'Provision ESP32',
+                'Set up a new ESP32 device',
+                () => Navigator.pushNamed(context, '/provision'),
+                color: HomeDesign.cyan,
               ),
               const Divider(),
-              HomeSettingsRow(
-                icon: Icons.wifi_rounded,
-                title: 'Wi-Fi manager',
-                subtitle: 'Change the ESP32 network',
-                onTap: () => Navigator.pushNamed(context, '/wifiConfig'),
+              row(
+                Icons.wifi,
+                'Wi-Fi manager',
+                'Configure Wi-Fi network settings',
+                () => Navigator.pushNamed(context, '/wifiConfig'),
+                color: HomeDesign.cyan,
               ),
               const Divider(),
-              HomeSettingsRow(
-                icon: Icons.hub_outlined,
-                title: 'I/O modules',
-                subtitle: 'Configure buses and output boards',
-                onTap: () => Navigator.pushNamed(context, '/ioModules'),
+              row(
+                Icons.view_in_ar_outlined,
+                'I/O modules',
+                'Manage connected I/O modules',
+                () => Navigator.pushNamed(context, '/ioModules'),
+                color: HomeDesign.violet,
               ),
               const Divider(),
-              HomeSettingsRow(
-                icon: Icons.info_outline,
-                title: 'About',
-                subtitle: 'Smart Home 2.10.0',
-                onTap: () => showAboutDialog(
+              row(
+                Icons.info_outline,
+                'About',
+                'App version, licenses and more',
+                () => showAboutDialog(
                   context: context,
                   applicationName: 'Smart Home',
-                  applicationVersion: '2.10.0',
+                  applicationVersion: '2.11.0',
                   applicationIcon: const HomeGlowIcon(Icons.home_outlined),
-                  children: const [
-                    Text(
-                      'Local device control, Bluetooth backup and an on-device voice assistant.',
-                    ),
-                  ],
                 ),
               ),
             ],

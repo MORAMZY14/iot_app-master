@@ -55,13 +55,6 @@ class _WifiCredentialsCardState extends State<WifiCredentialsCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'Network details',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          const Text('Select a network above or enter its name.'),
-          const SizedBox(height: 16),
           TextFormField(
             controller: _ssid,
             enabled: !widget.busy,
@@ -77,7 +70,12 @@ class _WifiCredentialsCardState extends State<WifiCredentialsCard> {
           ),
           CheckboxListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('Password protected'),
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            title: const Text(
+              'Password protected',
+              style: TextStyle(fontSize: 11),
+            ),
             value: _secure,
             onChanged: widget.busy
                 ? null

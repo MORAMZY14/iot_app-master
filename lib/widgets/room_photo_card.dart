@@ -36,117 +36,101 @@ class RoomPhotoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget fallback(BuildContext context, Object error, StackTrace? trace) =>
-        ColoredBox(
-          color: HomeDesign.panel,
-          child: Center(child: Icon(icon, size: 38, color: HomeDesign.cyan)),
-        );
     return Semantics(
       selected: selected,
       label: '$room, $deviceCount devices, $activeCount on',
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            if (selected)
-              BoxShadow(
-                color: HomeDesign.blue.withValues(alpha: .26),
-                blurRadius: 18,
-              ),
-          ],
+          borderRadius: BorderRadius.circular(11),
+          boxShadow: selected
+              ? [
+                  const BoxShadow(color: HomeDesign.blue, blurRadius: 8),
+                  BoxShadow(
+                    color: HomeDesign.violet.withValues(alpha: .5),
+                    blurRadius: 14,
+                  ),
+                ]
+              : [],
         ),
         child: Material(
           color: HomeDesign.panel,
           clipBehavior: Clip.antiAlias,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(11),
             side: BorderSide(
-              color: selected ? HomeDesign.cyan : HomeDesign.border,
-              width: selected ? 2 : 1,
+              color: selected ? const Color(0xFFC0D8FF) : HomeDesign.border,
+              width: selected ? 1.3 : 1,
             ),
           ),
           child: InkWell(
             onTap: onTap,
-            child: Stack(
-              fit: StackFit.expand,
+            onLongPress: onChangeImage,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                imageBytes == null
-                    ? Image.asset(
-                        defaultPhoto(room),
-                        fit: BoxFit.cover,
-                        alignment: Alignment.center,
-                        cacheWidth: 768,
-                        errorBuilder: fallback,
-                      )
-                    : Image.memory(
-                        imageBytes!,
-                        fit: BoxFit.cover,
-                        cacheWidth: 768,
-                        gaplessPlayback: true,
-                        errorBuilder: fallback,
-                      ),
-                const DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Color(0x55060D19),
-                        Color(0x33060D19),
-                        Color(0xF5060D19),
-                      ],
-                      stops: [0, .3, 1],
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 10,
-                  left: 10,
-                  child: Icon(icon, size: 22, color: Colors.white),
-                ),
-                Positioned(
-                  top: 2,
-                  right: 2,
-                  child: IconButton(
-                    tooltip: 'Change $room photo',
-                    onPressed: onChangeImage,
-                    style: IconButton.styleFrom(
-                      backgroundColor: const Color(0x66060D19),
-                      foregroundColor: Colors.white,
-                    ),
-                    icon: const Icon(
-                      Icons.add_photo_alternate_outlined,
-                      size: 18,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 13,
-                  right: 13,
-                  bottom: 14,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
                     children: [
-                      Text(
-                        room,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
+                      imageBytes == null
+                          ? ReferenceArt.room(room)
+                          : Image.memory(imageBytes!, fit: BoxFit.cover),
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        child: SizedBox(
+                          width: 30,
+                          height: 28,
+                          child: IconButton(
+                            tooltip: 'Change $room photo',
+                            padding: EdgeInsets.zero,
+                            onPressed: onChangeImage,
+                            icon: const Icon(
+                              Icons.photo_camera_outlined,
+                              size: 13,
+                              color: Colors.white70,
+                            ),
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 5),
-                      Text(
-                        '$deviceCount ${deviceCount == 1 ? 'device' : 'devices'} · $activeCount on',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFFCAD7EA),
-                          fontSize: 11,
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(9, 5, 7, 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              room,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '$deviceCount devices  |  ● $activeCount active',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 8.5,
+                                color: Color(0xFFAFBED8),
+                              ),
+                            ),
+                          ],
                         ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: Colors.white,
                       ),
                     ],
                   ),

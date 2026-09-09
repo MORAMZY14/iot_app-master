@@ -23,7 +23,7 @@ class _HomeScenesState extends State<HomeScenes> {
   bool _busy = false;
   static const _items = [
     (Icons.home_outlined, 'Home'),
-    (Icons.shield_outlined, 'Away'),
+    (Icons.directions_walk, 'Away'),
     (Icons.bedtime_outlined, 'Sleep'),
     (Icons.movie_outlined, 'Movie'),
   ];
@@ -187,32 +187,15 @@ class _HomeScenesState extends State<HomeScenes> {
   Widget build(BuildContext context) => Row(
     children: [
       for (final (i, item) in _items.indexed) ...[
-        if (i > 0) const SizedBox(width: 9),
+        if (i > 0) const SizedBox(width: 8),
         Expanded(
           child: Semantics(
-            button: true,
             label: 'Configure ${item.$2} scene',
-            child: InkWell(
-              onTap: _busy ? null : () => _open(item.$2),
-              borderRadius: BorderRadius.circular(16),
-              child: HomeCard(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 10,
-                  horizontal: 4,
-                ),
-                child: Column(
-                  children: [
-                    Icon(
-                      item.$1,
-                      color: i == 0
-                          ? HomeDesign.cyan
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(height: 7),
-                    Text(item.$2, style: const TextStyle(fontSize: 11)),
-                  ],
-                ),
-              ),
+            child: ReferenceChoice(
+              label: item.$2,
+              icon: item.$1,
+              selected: i == 0,
+              onTap: () => _busy ? null : _open(item.$2),
             ),
           ),
         ),

@@ -320,7 +320,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             child: SingleChildScrollView(
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
               padding: EdgeInsets.symmetric(
-                horizontal: isWide ? 48 : 20,
+                horizontal: isWide ? 48 : 18,
                 vertical: 12,
               ),
               child: ConstrainedBox(
@@ -356,60 +356,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Widget _buildAuthCard(BuildContext context) {
-    return _GlassCard(
+    return Padding(
+      padding: EdgeInsets.zero,
       child: Form(
         key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              children: [
-                Container(
-                  width: 54,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    gradient: const LinearGradient(
-                      colors: [_LoginColors.purple, _LoginColors.cyan],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _LoginColors.purple.withOpacity(0.28),
-                        blurRadius: 24,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.home_rounded, color: Colors.white),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _isLogin ? 'Welcome back' : 'Create account',
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _isLogin
-                            ? 'Control your home instantly.'
-                            : 'Pair your ESP32 and start controlling devices.',
-                        style: TextStyle(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withOpacity(0.58),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            Text(
+              _isLogin ? 'Welcome back' : 'Create account',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 29, fontWeight: FontWeight.w600),
             ),
-            const SizedBox(height: 26),
+            const SizedBox(height: 4),
+            Text(
+              _isLogin
+                  ? 'Control your home instantly.'
+                  : 'Pair your ESP32 and start controlling devices.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 17, color: Color(0xFF98AED3)),
+            ),
+            const SizedBox(height: 25),
             _ModeSwitch(isLogin: _isLogin, onChanged: _toggleMode),
             const SizedBox(height: 22),
             AnimatedSwitcher(
@@ -455,12 +423,88 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 ),
               ],
             ),
-            if (_isLogin)
-              TextButton.icon(
-                onPressed: _isLoading ? null : _showForgotPasswordDialog,
-                icon: const Icon(Icons.help_outline_rounded, size: 18),
-                label: const Text('Forgot password?'),
+            if (_isLogin) ...[
+              const SizedBox(height: 22),
+              const Row(
+                children: [
+                  Expanded(child: Divider()),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'OR JUST KNOW',
+                      style: TextStyle(
+                        fontSize: 8,
+                        letterSpacing: 2,
+                        color: Color(0xFF7B94BA),
+                      ),
+                    ),
+                  ),
+                  Expanded(child: Divider()),
+                ],
               ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  for (final item in const [
+                    (Icons.bolt, 'Low latency', 'Real-time control'),
+                    (Icons.bluetooth, 'BLE backup', 'Offline ready'),
+                    (
+                      Icons.cloud_outlined,
+                      'Firebase auth',
+                      'Secure & reliable',
+                    ),
+                  ])
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: HomeCard(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                item.$1,
+                                size: 21,
+                                color: HomeDesign.cyan,
+                                shadows: const [
+                                  Shadow(color: HomeDesign.blue, blurRadius: 9),
+                                ],
+                              ),
+                              const SizedBox(width: 5),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item.$2,
+                                      style: const TextStyle(fontSize: 8.5),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      item.$3,
+                                      style: const TextStyle(
+                                        fontSize: 7,
+                                        color: Color(0xFF8CA3C6),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 23),
+              TextButton(
+                onPressed: _isLoading ? null : _showForgotPasswordDialog,
+                child: const Text('Forgot password?'),
+              ),
+            ],
           ],
         ),
       ),
@@ -609,93 +653,91 @@ class _HeroPanel extends StatelessWidget {
 class _CompactHeader extends StatelessWidget {
   const _CompactHeader();
   @override
-  Widget build(BuildContext context) => const HomeHero(
-    title: 'SMARTER. BRIGHTER. HOME.',
-    subtitle: 'Connected living starts here.',
-    icon: Icons.home_outlined,
-    height: 200,
+  Widget build(BuildContext context) => SizedBox(
+    height: 195,
+    child: Stack(
+      clipBehavior: Clip.none,
+      fit: StackFit.expand,
+      children: [
+        Positioned(
+          left: -18,
+          right: -18,
+          top: 0,
+          bottom: 0,
+          child: ShaderMask(
+            blendMode: BlendMode.dstIn,
+            shaderCallback: (r) => const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.transparent,
+                Colors.white,
+                Colors.white,
+                Colors.transparent,
+              ],
+              stops: [0, .2, .7, 1],
+            ).createShader(r),
+            child: ReferenceArt.house,
+          ),
+        ),
+        Column(
+          children: [
+            const SizedBox(height: 17),
+            Icon(
+              Icons.home_outlined,
+              size: 70,
+              color: const Color(0xFF7CB5FF),
+              shadows: const [
+                Shadow(color: HomeDesign.blue, blurRadius: 15),
+                Shadow(color: HomeDesign.violet, blurRadius: 25),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'SMARTER\nBRIGHTER HOME',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                letterSpacing: 2.4,
+                color: Color(0xFFCCD9FF),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
   );
 }
 
 class _ModeSwitch extends StatelessWidget {
+  const _ModeSwitch({required this.isLogin, required this.onChanged});
   final bool isLogin;
   final VoidCallback onChanged;
-  const _ModeSwitch({required this.isLogin, required this.onChanged});
-
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _ModeButton(
-              label: 'Sign In',
-              selected: isLogin,
-              onTap: isLogin ? null : onChanged,
-            ),
-          ),
-          Expanded(
-            child: _ModeButton(
-              label: 'Sign Up',
-              selected: !isLogin,
-              onTap: !isLogin ? null : onChanged,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ModeButton extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-  const _ModeButton({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 90),
-        height: 42,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? _LoginColors.purple : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: _LoginColors.purple.withOpacity(0.26),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected
-                ? Colors.white
-                : Theme.of(context).colorScheme.onSurface.withOpacity(0.62),
-            fontWeight: FontWeight.w800,
-          ),
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: ReferenceChoice(
+          label: 'Sign In',
+          icon: Icons.person,
+          selected: isLogin,
+          onTap: () {
+            if (!isLogin) onChanged();
+          },
         ),
       ),
-    );
-  }
+      Expanded(
+        child: ReferenceChoice(
+          label: 'Sign Up',
+          icon: Icons.person_add_alt_1,
+          selected: !isLogin,
+          onTap: () {
+            if (isLogin) onChanged();
+          },
+        ),
+      ),
+    ],
+  );
 }
 
 class _SmartTextField extends StatelessWidget {

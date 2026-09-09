@@ -371,7 +371,8 @@ class _IoModulesPageState extends State<IoModulesPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('I/O Modules'),
+      toolbarHeight: 40,
+      title: const Text(''),
       actions: [
         IconButton(
           tooltip: 'Reload modules',
@@ -384,23 +385,32 @@ class _IoModulesPageState extends State<IoModulesPage> {
       child: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
               children: [
-                const HomeHero(
-                  title: 'Room to expand',
-                  subtitle: 'Manage your I²C buses and output modules.',
-                  icon: Icons.hub_outlined,
-                  height: 160,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Expanded(
+                      child: HomeHero(
+                        title: 'I/O Modules',
+                        subtitle: 'Configure your I/O expansion modules',
+                        photograph: false,
+                        showTop: false,
+                        height: 82,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 120,
+                      child: HomePrimaryButton(
+                        label: 'Add Module',
+                        icon: Icons.add,
+                        onPressed: _saving || _modules.length >= 16
+                            ? null
+                            : () => _openEditor(),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                HomePrimaryButton(
-                  label: 'Add module',
-                  icon: Icons.add_rounded,
-                  onPressed: _saving || _modules.length >= 16
-                      ? null
-                      : () => _openEditor(),
-                ),
-                const HomeSection('I²C CONTROLLERS'),
                 if (_error != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -412,8 +422,35 @@ class _IoModulesPageState extends State<IoModulesPage> {
                     ),
                   ),
                 const HomeCard(
-                  child: Text(
-                    'Use either of the two I²C buses. Boards sharing a bus must have different A0/A1/A2 addresses. Up to 16 PCF8574 modules are supported.',
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      HomeGlowIcon(Icons.memory, size: 50),
+                      SizedBox(width: 13),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'ESP32 I²C Support',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            SizedBox(height: 7),
+                            Text(
+                              'Your ESP32 has two hardware I²C buses (I2C0 and I2C1) and supports PCF8574 I/O expander boards. Each bus can have multiple modules with different I²C addresses (0x20 – 0x27).',
+                              style: TextStyle(
+                                fontSize: 11,
+                                height: 1.5,
+                                color: Color(0xFFA6BBDD),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -429,15 +466,15 @@ class _IoModulesPageState extends State<IoModulesPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Bus $id',
+                                'Bus $id (I2C$id)',
                                 style: const TextStyle(
-                                  fontSize: 18,
+                                  fontSize: 13,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'SDA ${_buses[id]?['sda'] ?? '—'}  •  SCL ${_buses[id]?['scl'] ?? '—'}',
+                                'SDA (GPIO)       ${_buses[id]?['sda'] ?? '—'}\n\nSCL (GPIO)       ${_buses[id]?['scl'] ?? '—'}',
                                 style: const TextStyle(fontSize: 12),
                               ),
                               const SizedBox(height: 5),
@@ -454,7 +491,7 @@ class _IoModulesPageState extends State<IoModulesPage> {
                     ],
                   ],
                 ),
-                const HomeSection('YOUR MODULES'),
+                const SizedBox(height: 12),
                 for (final module in _modules)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -477,12 +514,18 @@ class _IoModulesPageState extends State<IoModulesPage> {
     return HomeCard(
       glowColor: module['enabled'] == true ? HomeDesign.blue : null,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const HomeGlowIcon(Icons.memory_rounded, size: 46),
-              const SizedBox(width: 12),
+              const SizedBox(
+                width: 75,
+                height: 60,
+                child: ReferenceArt(
+                  asset: 'assets/images/reference_10.png',
+                  crop: Rect.fromLTWH(170, 768, 161, 108),
+                ),
+              ),
+              const SizedBox(width: 9),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -490,22 +533,38 @@ class _IoModulesPageState extends State<IoModulesPage> {
                     Text(
                       module['name'].toString(),
                       style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
+                    const SizedBox(height: 6),
                     const Text(
-                      'PCF8574 • 8 outputs',
-                      style: TextStyle(fontSize: 12),
+                      'PCF8574',
+                      style: TextStyle(fontSize: 12, color: Color(0xFFA6BBDD)),
                     ),
                   ],
                 ),
               ),
+              Text(
+                ready == true
+                    ? '● Ready'
+                    : ready == false
+                    ? 'Offline'
+                    : '—',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: ready == true
+                      ? const Color(0xFF25E8B6)
+                      : const Color(0xFFA6BBDD),
+                ),
+              ),
               PopupMenuButton<String>(
                 enabled: !_saving,
-                onSelected: (value) {
-                  if (value == 'edit') _openEditor(module);
-                  if (value == 'delete') _deleteModule(module);
+                onSelected: (v) {
+                  if (v == 'edit')
+                    _openEditor(module);
+                  else
+                    _deleteModule(module);
                 },
                 itemBuilder: (_) => const [
                   PopupMenuItem(
@@ -517,52 +576,92 @@ class _IoModulesPageState extends State<IoModulesPage> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          const Divider(),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Text('Bus'),
-              const SizedBox(width: 12),
-              DropdownButton<int>(
-                value: module['busId'] as int,
-                items: const [
-                  DropdownMenuItem(value: 0, child: Text('Bus 0')),
-                  DropdownMenuItem(value: 1, child: Text('Bus 1')),
-                ],
-                onChanged: _saving
-                    ? null
-                    : (v) {
-                        if (v != null) setState(() => module['busId'] = v);
-                      },
-              ),
-              const Spacer(),
-              TextButton(
-                onPressed: _saving ? null : () => _openEditor(module),
-                child: Text(
-                  '0x${address.toRadixString(16).padLeft(2, '0').toUpperCase()}',
-                ),
-              ),
-            ],
-          ),
+          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
-                child: Text(
-                  ready == null
-                      ? 'Status not reported'
-                      : ready == true
-                      ? 'Controller reports ready'
-                      : 'Controller reports offline',
-                  style: const TextStyle(fontSize: 12),
+                flex: 3,
+                child: HomeCard(
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'I²C Bus',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Color(0xFFA6BBDD),
+                        ),
+                      ),
+                      DropdownButton<int>(
+                        isExpanded: true,
+                        underline: const SizedBox.shrink(),
+                        value: module['busId'] as int,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.white,
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 0,
+                            child: Text('Bus 0 (I2C0)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 1,
+                            child: Text('Bus 1 (I2C1)'),
+                          ),
+                        ],
+                        onChanged: _saving
+                            ? null
+                            : (v) {
+                                if (v != null)
+                                  setState(() => module['busId'] = v);
+                              },
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const Text('Enabled', style: TextStyle(fontSize: 12)),
-              Switch(
-                value: module['enabled'] != false,
-                onChanged: _saving
-                    ? null
-                    : (v) => setState(() => module['enabled'] = v),
+              const SizedBox(width: 6),
+              Expanded(
+                flex: 2,
+                child: HomeCard(
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'I²C Address',
+                        style: TextStyle(fontSize: 9, color: Color(0xFFA6BBDD)),
+                      ),
+                      TextButton(
+                        onPressed: _saving ? null : () => _openEditor(module),
+                        child: Text(
+                          '0x${address.toRadixString(16).padLeft(2, '0').toUpperCase()}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Column(
+                  children: [
+                    const Text('Enabled', style: TextStyle(fontSize: 9)),
+                    SizedBox(
+                      height: 48,
+                      child: FittedBox(
+                        child: Switch(
+                          value: module['enabled'] != false,
+                          onChanged: _saving
+                              ? null
+                              : (v) => setState(() => module['enabled'] = v),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

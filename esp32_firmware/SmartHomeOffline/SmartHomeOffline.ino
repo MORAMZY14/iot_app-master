@@ -65,6 +65,8 @@
 
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include "CloudTransport.h"
+#include "ControlIntentGuard.h"
 #include <WiFiClientSecure.h>
 #include <DHT.h>
 #include <Preferences.h>
@@ -100,7 +102,7 @@ DHT dht(DHTPIN, DHTTYPE);
 // ELLIE VOICE ASSISTANT
 // =======================
 #define ELLIE_DEFAULT_NAME "Ellie"
-#define SMART_HOME_FIRMWARE_VERSION "2.6.0-music-multidevice"
+#define SMART_HOME_FIRMWARE_VERSION "2.8.0-responsive-local"
 #define ELLIE_MAX_NAME_BYTES 72
 #define ELLIE_I2S_BCLK_PIN 26
 #define ELLIE_I2S_LRC_PIN 25
@@ -213,6 +215,10 @@ String hardwareConfigSignature = "";
 
 WiFiClientSecure streamClient;
 bool streamConnected = false;
+bool streamConnectPending = false;
+CloudTransport cloudTransport;
+uint32_t localConfigRevision = 0;
+String cachedRoomsJson = "[]";
 String streamBuffer = "";
 
 // Registration & UID
@@ -357,7 +363,10 @@ struct BleCommandMessage {
 QueueHandle_t bleCommandQueue = nullptr;
 volatile bool bleCommandQueueOverflow = false;
 uint32_t bleResponseSequence = 0;
+String currentBleRequestId;
 
+void completeRegistration(String uid);
+void clearAllDevicesLocal();
 void setupBleBackup();
 void processPendingBleCommands();
 void handleBleCommand(const String& raw);
@@ -876,73 +885,58 @@ void reapplyCachedRelayStates() {
 // FIREBASE HTTP FUNCTIONS
 // =======================
 void httpPut(const String& path, const String& json, uint16_t timeoutMs = FIREBASE_HTTP_TIMEOUT_MS) {
-  if (WiFi.status() != WL_CONNECTED) return;
-  HTTPClient http;
-  client.setInsecure();
-  http.setReuse(true);
-  http.begin(client, DATABASE_URL + path);
-  http.setTimeout(timeoutMs);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Connection", "keep-alive");
-  int code = http.PUT(json);
-  if (VERBOSE_LOGS) {
-    if (code > 0) Serial.println("✅ HTTP PUT success: " + path);
-    else Serial.printf("❌ HTTP PUT failed: %s\n", http.errorToString(code).c_str());
+  if (!cloudTransport.enqueue(CloudTransport::Put, path, json, localConfigRevision)) {
+    Serial.println("Cloud write busy; local configuration remains saved in NVS");
   }
-  http.end();
-}
-
-String httpGet(const String& path, uint16_t timeoutMs = FIREBASE_HTTP_TIMEOUT_MS) {
-  if (WiFi.status() != WL_CONNECTED) return "";
-  HTTPClient http;
-  client.setInsecure();
-  http.setReuse(true);
-  http.begin(client, DATABASE_URL + path);
-  http.setTimeout(timeoutMs);
-  http.addHeader("Connection", "keep-alive");
-  int code = http.GET();
-  String payload = (code == 200) ? http.getString() : "";
-  if (VERBOSE_LOGS && code <= 0) {
-    Serial.printf("❌ HTTP GET failed: %s\n", http.errorToString(code).c_str());
-  }
-  http.end();
-  return payload;
 }
 
 String httpPatch(const String& path, const String& json, uint16_t timeoutMs = FIREBASE_HTTP_TIMEOUT_MS) {
-  if (WiFi.status() != WL_CONNECTED) return "";
-  HTTPClient http;
-  client.setInsecure();
-  http.setReuse(true);
-  http.begin(client, DATABASE_URL + path);
-  http.setTimeout(timeoutMs);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Connection", "keep-alive");
-  int code = http.PATCH(json);
-  String response = (code == 200) ? http.getString() : "";
-  if (VERBOSE_LOGS && code <= 0) {
-    Serial.printf("❌ HTTP PATCH failed: %s\n", http.errorToString(code).c_str());
+  const bool queued = cloudTransport.enqueue(CloudTransport::Patch, path, json, localConfigRevision);
+  return queued ? "queued" : "";
+}
+
+void processCloudResults() {
+  // One completion per loop; no network operation or cross-task map mutation.
+  CloudTransport::Request* result = cloudTransport.receive();
+  if (!result) return;
+  if (result->method == CloudTransport::Sse) {
+    streamConnectPending = false;
+    streamConnected = result->status == 200 && WiFi.status() == WL_CONNECTED;
+    streamBuffer = "";
+    if (!streamConnected) streamClient.stop();
+  } else if (result->status >= 200 && result->status < 300 && result->method == CloudTransport::Get) {
+    const String& response = result->response;
+    if (result->path.endsWith("/ownerUID.json") && !isRegistered && response.length() > 2 && response != "null") {
+      StaticJsonDocument<256> owner;
+      if (!deserializeJson(owner, response) && owner.is<const char*>()) completeRegistration(owner.as<String>());
+    } else if (result->path == firebasePath + "hardware.json" && result->revision == localConfigRevision) {
+      if (response == "null") httpPut(firebasePath + "hardware.json", buildHardwareConfigJson());
+      else if (response.length()) applyHardwareConfigJson(response, true, true);
+      manualSyncRequested = true;
+    } else if (result->path == firebasePath + "devices.json" && result->revision == localConfigRevision) {
+      if (response == "null") clearAllDevicesLocal();
+      else {
+        DynamicJsonDocument doc(12288);
+        if (!deserializeJson(doc, response) && doc.is<JsonObject>()) applyFirebaseDevices(doc.as<JsonObject>(), true);
+      }
+    } else if (result->path == firebasePath + "rooms.json") {
+      DynamicJsonDocument doc(4096);
+      if (!deserializeJson(doc, response) && (doc.is<JsonArray>() || doc.is<JsonObject>() || doc.isNull())) {
+        cachedRoomsJson = response == "null" ? "[]" : response;
+      }
+    }
+  } else if (result->status < 200 || result->status >= 300) {
+    if (VERBOSE_LOGS) Serial.printf("Cloud job failed: %d\n", result->status);
   }
-  http.end();
-  return response;
+  delete result;
 }
 
 // =======================
 // REGISTRATION FUNCTIONS
 // =======================
 void checkOwnerUID() {
-  if (WiFi.status() != WL_CONNECTED) return;
-
-  String path = "/esp_public/" + esp32UniqueCode + "/ownerUID.json";
-  String response = httpGet(path);
-
-  if (response.length() > 0 && response != "null") {
-    String uid = response;
-    uid.replace("\"", "");
-    if (uid.length() > 0) {
-      Serial.println("✅ ESP claimed by UID: " + uid);
-      completeRegistration(uid);
-    }
+  if (WiFi.status() == WL_CONNECTED && !isRegistered) {
+    cloudTransport.enqueue(CloudTransport::Get, "/esp_public/" + esp32UniqueCode + "/ownerUID.json");
   }
 }
 
@@ -960,26 +954,8 @@ void completeRegistration(String uid) {
   String nodePath = firebasePath;
   if (nodePath.endsWith("/")) nodePath.remove(nodePath.length() - 1);
 
-  String initJson = "{";
-  initJson += "\"temperature\":0,";
-  initJson += "\"humidity\":0,";
-  initJson += "\"flame\":false,";
-  initJson += "\"lights\":{},";
-  initJson += "\"sensors\":{";
-  initJson += "\"temperature\":0,";
-  initJson += "\"humidity\":0,";
-  initJson += "\"flame\":false";
-  initJson += "},";
-  initJson += "\"status\":{";
-  initJson += "\"online\":true,";
-  initJson += "\"lastSeen\":" + String(time(nullptr)) + ",";
-  initJson += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
-  initJson += "\"rssi\":" + String(WiFi.RSSI()) + ",";
-  initJson += "\"ping\":12,";
-  initJson += "\"uniqueCode\":\"" + esp32UniqueCode + "\"";
-  initJson += "}";
-  initJson += "}";
-  httpPut(nodePath + ".json", initJson, FIREBASE_LONG_HTTP_TIMEOUT_MS);
+  // Claiming a controller must not replace an existing home node.
+  httpPatch(nodePath + "/status.json", buildStatusJson(time(nullptr), WiFi.localIP().toString(), WiFi.SSID(), WiFi.gatewayIP().toString(), WiFi.RSSI()));
 
   Serial.println("✅ Registration completed for UID: " + uid);
   syncHardwareFromFirebase();
@@ -1003,6 +979,7 @@ void loadRegistration() {
 // DEVICE FUNCTIONS
 // =======================
 void saveDevicesToPreferences() {
+  static String lastSavedJson;
   DynamicJsonDocument doc(12288);
   JsonArray list = doc.to<JsonArray>();
   for (auto& pair : devices) {
@@ -1020,8 +997,8 @@ void saveDevicesToPreferences() {
   String json;
   serializeJson(list, json);
   devicePrefs.begin("devices", false);
-  devicePrefs.clear();
-  devicePrefs.putString("json", json);
+  if (json == lastSavedJson) { devicePrefs.end(); return; }
+  if (devicePrefs.putString("json", json) > 0) lastSavedJson = json;
   devicePrefs.end();
 }
 
@@ -1258,6 +1235,7 @@ bool shouldIgnoreCloudState(const String& id, bool cloudState) {
 }
 
 void setDeviceStateInternal(String id, bool state, bool writeFirebase) {
+  if (writeFirebase) ++localConfigRevision;
   auto it = devices.find(id);
   if (it == devices.end()) return;
   Device& device = it->second;
@@ -1300,6 +1278,7 @@ bool outputAlreadyUsed(const String& moduleId, int channel, const String& exclud
 }
 
 String addDevice(String name, int type, String moduleId, int channel, String room, String requestedId, bool writeFirebase) {
+  ++localConfigRevision;
   requestedId.trim();
   const String id = requestedId.length() > 0 ? requestedId : ("dev_" + String(millis()));
 
@@ -1355,6 +1334,7 @@ String addDevice(String name, int type, String moduleId, int channel, String roo
 }
 
 void removeDevice(String id) {
+  ++localConfigRevision;
   auto it = devices.find(id);
   if (it == devices.end()) return;
   Device d = it->second;
@@ -1373,14 +1353,8 @@ void removeDevice(String id) {
 // =======================
 void syncHardwareFromFirebase() {
   if (WiFi.status() != WL_CONNECTED || !isRegistered) return;
-  String response = httpGet(firebasePath + "hardware.json", FIREBASE_LONG_HTTP_TIMEOUT_MS);
-  if (response.length() == 0) return;
-
-  if (response == "null") {
-    httpPut(firebasePath + "hardware.json", buildHardwareConfigJson(), FIREBASE_LONG_HTTP_TIMEOUT_MS);
-    return;
-  }
-  applyHardwareConfigJson(response, true, true);
+  cloudTransport.enqueue(CloudTransport::Get, firebasePath + "hardware.json", "", localConfigRevision);
+  cloudTransport.enqueue(CloudTransport::Get, firebasePath + "rooms.json");
 }
 
 void clearAllDevicesLocal() {
@@ -1475,13 +1449,7 @@ void applyFirebaseDevices(JsonObject firebaseDevices, bool allowCloudConflictPat
 
 void syncDevicesFromFirebase() {
   if (WiFi.status() != WL_CONNECTED || !isRegistered) return;
-  String response = httpGet(firebasePath + "devices.json", FIREBASE_LONG_HTTP_TIMEOUT_MS);
-  if (response.length() == 0) return;
-  if (response == "null") { clearAllDevicesLocal(); return; }
-
-  DynamicJsonDocument doc(12288);
-  if (deserializeJson(doc, response) || !doc.is<JsonObject>()) return;
-  applyFirebaseDevices(doc.as<JsonObject>(), true);
+  cloudTransport.enqueue(CloudTransport::Get, firebasePath + "devices.json", "", localConfigRevision);
 }
 
 // =======================
@@ -1514,7 +1482,7 @@ void connectToWiFi() {
   WiFi.begin(savedSSID.c_str(), savedPass.c_str());
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < (WIFI_TIMEOUT_SEC * 2)) {
-    delay(500);
+    for (int slice = 0; slice < 50; ++slice) { processPendingBleCommands(); delay(10); }
     Serial.print(".");
     attempts++;
   }
@@ -1684,32 +1652,11 @@ scan();
 // SSE STREAM FUNCTIONS
 // =======================
 void connectSSEStream() {
-  if (streamConnected) return;
-  if (WiFi.status() != WL_CONNECTED) return;
-  if (!isRegistered || firebasePath.length() == 0) return;
-
-  unsigned long now = millis();
+  if (streamConnected || streamConnectPending || WiFi.status() != WL_CONNECTED || !isRegistered) return;
+  const unsigned long now = millis();
   if (now - lastStreamReconnect < STREAM_RECONNECT_INTERVAL) return;
   lastStreamReconnect = now;
-
-  String streamPath = firebasePath.substring(0, firebasePath.length() - 1) + "/devices";
-
-  Serial.println("📡 Connecting to SSE stream: " + streamPath);
-  streamClient.setInsecure();
-  streamClient.setTimeout(1);
-  if (!streamClient.connect("iot-smart-home-81abd-default-rtdb.europe-west1.firebasedatabase.app", 443)) {
-    Serial.println("❌ SSE connection failed");
-    return;
-  }
-  streamClient.println("GET " + streamPath + ".json?format=event-stream HTTP/1.1");
-  streamClient.println("Host: iot-smart-home-81abd-default-rtdb.europe-west1.firebasedatabase.app");
-  streamClient.println("Accept: text/event-stream");
-  streamClient.println("Cache-Control: no-cache");
-  streamClient.println("Connection: keep-alive");
-  streamClient.println();
-  streamConnected = true;
-  streamBuffer = "";
-  Serial.println("✅ SSE stream connected!");
+  streamConnectPending = cloudTransport.enqueue(CloudTransport::Sse, firebasePath + "devices.json?format=event-stream");
 }
 
 void processLightsPayload(const String& payload) {
@@ -2361,25 +2308,21 @@ EllieResult runEllieIntent(const String& rawText) {
     }
   }
 
-  int desiredState = -1;
-  if (ellieContainsPhrase(text, "turn on") || ellieContainsPhrase(text, "switch on") ||
-      ellieContainsPhrase(text, "power on") || ellieContainsPhrase(text, "activate") ||
-      ellieContainsPhrase(text, "شغل") || ellieContainsPhrase(text, "شغلي") ||
-      ellieContainsPhrase(text, "افتح") || ellieContainsPhrase(text, "افتحي") ||
-      ellieContainsPhrase(text, "تشغيل")) {
-    desiredState = 1;
-  } else if (ellieContainsPhrase(text, "turn off") || ellieContainsPhrase(text, "switch off") ||
-             ellieContainsPhrase(text, "power off") || ellieContainsPhrase(text, "deactivate") ||
-             ellieContainsPhrase(text, "shut down") || ellieContainsPhrase(text, "اطفي") ||
-             ellieContainsPhrase(text, "اطفئ") || ellieContainsPhrase(text, "اقفل") ||
-             ellieContainsPhrase(text, "اقفلي") || ellieContainsPhrase(text, "اغلق") ||
-             ellieContainsPhrase(text, "اطفاء")) {
-    desiredState = 0;
-  } else if (!statusQuestion && text.endsWith(" on")) {
-    desiredState = 1;
-  } else if (!statusQuestion && text.endsWith(" off")) {
-    desiredState = 0;
+  String guardText = text;
+  // Arabic commonly attaches the conjunction to the following verb.
+  guardText.replace("واطفي", "و اطفي");
+  guardText.replace("واطفئ", "و اطفئ");
+  guardText.replace("وشغل", "و شغل");
+  guardText.replace("واقفل", "و اقفل");
+  const HomeIntent::PowerRequest power = HomeIntent::inspect(std::string(guardText.c_str()));
+  if (power.blocked) {
+    result.handled = true;
+    result.intent = "clarify_control";
+    result.reply = arabic ? "لم اغير اي جهاز. ارسل امر تشغيل او اطفاء واحدا مع اسم الجهاز، بدون شروط او استثناءات."
+        : "I left devices unchanged. Please send one on/off action with device names, without conditions or exceptions.";
+    return result;
   }
+  const int desiredState = power.state;
 
   if (desiredState >= 0) {
     std::vector<String> targetIds = ellieFindNamedDevices(text);
@@ -2458,15 +2401,28 @@ EllieResult runEllieIntent(const String& rawText) {
       return result;
     }
 
+    std::vector<String> failedIds;
     bool alreadyInState = true;
     for (const String& id : targetIds) {
       auto it = devices.find(id);
       if (it == devices.end()) continue;
       if (it->second.state != (desiredState == 1)) alreadyInState = false;
       setDeviceStateInternal(id, desiredState == 1, true);
+      if (it->second.state != (desiredState == 1)) failedIds.push_back(id);
     }
 
     result.handled = true;
+    if (!failedIds.empty()) {
+      result.intent = "output_error";
+      for (const String& id : targetIds) {
+        bool failed = false;
+        for (const String& failure : failedIds) if (failure == id) failed = true;
+        if (!failed) result.affectedIds.push_back(id);
+      }
+      result.reply = arabic ? "تعذر تغيير بعض الاجهزة. تحقق من توصيلات وحدة المخارج."
+          : "Some outputs could not be changed. Check the I/O module connection; other named outputs may have changed.";
+      return result;
+    }
     result.intent = desiredState == 1 ? "turn_on" : "turn_off";
     result.affectedIds = targetIds;
     if (targetIds.size() == 1) {
@@ -2703,7 +2659,9 @@ void processPendingBleCommands() {
   // One command per loop keeps HTTP, SSE and watchdog servicing predictable.
   BleCommandMessage message = {};
   if (xQueueReceive(bleCommandQueue, &message, 0) == pdTRUE) {
+    currentBleRequestId = "";
     handleBleCommand(String(message.json));
+    currentBleRequestId = "";
   }
 }
 
@@ -2713,7 +2671,7 @@ void bleReply(const String& json) {
   const uint32_t sequence = ++bleResponseSequence;
   if (json.startsWith("{") && json.length() > 1) {
     sequenced = String("{\"responseSequence\":") + String(sequence) +
-                "," + json.substring(1);
+                ",\"requestId\":\"" + jsonEscape(currentBleRequestId) + "\"," + json.substring(1);
   }
   bleCommandChar->setValue(sequenced.c_str());
   if (bleClientConnected) {
@@ -2832,6 +2790,7 @@ String buildBleWifiScanJson() {
 }
 
 bool setDeviceOutputLocal(const String& id, const String& newModuleId, int newChannel) {
+  ++localConfigRevision;
   auto it = devices.find(id);
   if (it == devices.end() || !moduleExists(newModuleId) || !isValidPcfChannel(newChannel)) return false;
   if (outputAlreadyUsed(newModuleId, newChannel, id)) return false;
@@ -2872,6 +2831,8 @@ void handleBleCommand(const String& raw) {
     return;
   }
 
+  currentBleRequestId = doc["requestId"] | "";
+  if (currentBleRequestId.length() > 40) currentBleRequestId = "";
   String cmd = doc["cmd"] | "";
 
   if (cmd == "ping" || cmd == "status") {
@@ -3217,9 +3178,8 @@ void setupDeviceAPI() {
 
   server.on("/api/sync", HTTP_GET, []() {
     Serial.println("🔄 Manual sync triggered from API");
-    syncHardwareFromFirebase();
-    syncDevicesFromFirebase();
-    sendCorsJson(200, "{\"success\":true,\"message\":\"Sync completed\"}");
+    manualHardwareSyncRequested = true;
+    sendCorsJson(202, "{\"success\":true,\"message\":\"Sync queued\"}");
   });
 
   server.on("/api/devices/add", HTTP_POST, []() {
@@ -3394,7 +3354,8 @@ void setupDeviceAPI() {
 
     // Return the real Firebase rooms list. Do not inject fake default rooms.
     if (isRegistered && firebasePath.length() > 0) {
-      String response = httpGet(firebasePath + "rooms.json");
+      cloudTransport.enqueue(CloudTransport::Get, firebasePath + "rooms.json");
+      String response = cachedRoomsJson;
       if (response.length() > 0 && response != "null") {
         DynamicJsonDocument roomsDoc(2048);
         DeserializationError err = deserializeJson(roomsDoc, response);
@@ -3581,6 +3542,7 @@ void setup() {
   loadAssistantName();
   setupEllieSpeaker();
   setupCloudUploadWorker();
+  if (!cloudTransport.begin(DATABASE_URL, &streamClient)) Serial.println("Cloud worker unavailable; local control remains active");
 
   // Restore I2C buses and I/O modules first, then cached devices for offline control.
   loadHardwareFromPreferences();
@@ -3597,20 +3559,7 @@ void setup() {
   wifiWasConnected = true;
   Serial.println("✅ Connected to WiFi, IP: " + WiFi.localIP().toString());
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-  Serial.print("⏰ Waiting for NTP time");
-  int retry = 0;
-  time_t now = time(nullptr);
-  while (now < 10000 && retry < 20) {
-    delay(500);
-    Serial.print(".");
-    now = time(nullptr);
-    retry++;
-  }
-  if (now > 10000) {
-    Serial.println("\n✅ Time synchronized");
-  } else {
-    Serial.println("\n⚠️ Time sync failed");
-  }
+  // SNTP updates time asynchronously; local control must not wait for Internet.
 
   Serial.println("📡 FORCE BROADCASTING to esp_public...");
   updateOnlineStatus();
@@ -3643,6 +3592,7 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
+  processCloudResults();
   retryOfflineIOModules(now);
   processPendingBleCommands();
 
@@ -3682,7 +3632,7 @@ void loop() {
   if (!wifiWasConnected) {
     wifiWasConnected = true;
     streamConnected = false;
-    streamClient.stop();
+    if (!streamConnectPending) streamClient.stop();
     updateOnlineStatus();
     manualSyncRequested = isRegistered;
     Serial.println("✅ Wi-Fi restored; status and device sync refreshed");

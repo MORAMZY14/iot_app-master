@@ -402,7 +402,8 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
     final ble = ref.watch(bleServiceProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ESP32 Wi-Fi Manager'),
+        toolbarHeight: 40,
+        title: const Text(''),
         actions: [
           IconButton(
             tooltip: 'Refresh network status',
@@ -418,15 +419,17 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
             await _scanNetworks();
           },
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
             children: [
               const HomeHero(
-                title: 'Your home connection',
-                subtitle: 'Manage the network used by your ESP32.',
+                title: 'ESP32 Wi-Fi Manager',
+                subtitle: 'Connect ESP32 to Wi-Fi',
                 icon: Icons.memory_rounded,
-                height: 160,
+                height: 76,
+                photograph: false,
+                showTop: false,
               ),
-              const HomeSection('CURRENT NETWORK'),
+
               _CurrentNetworkCard(
                 status: _status,
                 loading: _loadingStatus,
@@ -435,14 +438,46 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
                 onForget: _forgetNetwork,
                 onConnectBle: () => unawaited(ble.connect().catchError((_) {})),
               ),
-              const HomeSection('NEARBY NETWORKS'),
-              HomePrimaryButton(
-                label: _scanning ? 'Scanning…' : 'Scan networks',
-                icon: Icons.wifi_find_rounded,
-                busy: _scanning,
-                onPressed: _busy || _scanning ? null : _scanNetworks,
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Nearby networks from ESP32',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          'Networks found by ESP32 (last scan)',
+                          style: TextStyle(
+                            fontSize: 9,
+                            color: Color(0xFFA6BBDD),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _busy || _scanning ? null : _scanNetworks,
+                    icon: const Icon(Icons.wifi, size: 15),
+                    label: Text(
+                      _scanning ? '…' : 'Scan',
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Refresh network status',
+                    onPressed: _loadingStatus ? null : _loadStatus,
+                    icon: const Icon(Icons.refresh, size: 19),
+                  ),
+                ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 9),
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -463,10 +498,15 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
                         ? HomeDesign.blue
                         : null,
                     child: ListTile(
+                      dense: true,
+                      visualDensity: VisualDensity.compact,
                       enabled: !_busy,
                       onTap: () => setState(() => _selectedNetwork = network),
                       leading: const Icon(Icons.wifi_rounded),
-                      title: Text(network.ssid),
+                      title: Text(
+                        network.ssid,
+                        style: const TextStyle(fontSize: 12),
+                      ),
                       subtitle: Text(
                         '${network.rssi} dBm • ${network.secure ? 'Secured' : 'Open'}',
                       ),
@@ -478,13 +518,24 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
                     ),
                   ),
                 ),
-              const HomeSection('CHANGE NETWORK'),
+              const HomeSection('Manual Wi-Fi Configuration'),
               WifiCredentialsCard(
                 ssid: _selectedNetwork?.ssid ?? '',
                 secure: _selectedNetwork?.secure ?? true,
                 busy: _busy,
                 onSave: _connectToNetwork,
-                buttonLabel: 'Save & reconnect',
+                buttonLabel: 'Save and reconnect ESP32',
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.redAccent,
+                  side: const BorderSide(color: Colors.redAccent),
+                  minimumSize: const Size.fromHeight(46),
+                ),
+                onPressed: _busy ? null : _forgetNetwork,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Forget Wi-Fi'),
               ),
             ],
           ),
@@ -641,105 +692,96 @@ class _CurrentNetworkCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final connected = status?.online == true;
-    return _GCard(
-      padding: const EdgeInsets.all(18),
-      glowColor: connected ? _DT.green : _DT.amber,
+    return HomeCard(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  color: (connected ? _DT.green : _DT.amber).withValues(
-                    alpha: 0.15,
-                  ),
-                ),
-                child: Icon(
-                  connected ? Icons.wifi_rounded : Icons.wifi_off_rounded,
-                  color: connected ? _DT.green : _DT.amber,
-                ),
-              ),
+              const HomeGlowIcon(Icons.wifi, color: HomeDesign.cyan, size: 47),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    const Text(
+                      'Connected Network',
+                      style: TextStyle(fontSize: 11, color: Color(0xFFA6BBDD)),
+                    ),
+                    const SizedBox(height: 5),
                     Text(
-                      loading
-                          ? 'Reading ESP32 Wi-Fi...'
-                          : (connected
-                                ? 'ESP32 is connected'
-                                : 'ESP32 Wi-Fi unavailable'),
+                      status?.ssid.isNotEmpty == true
+                          ? status!.ssid
+                          : 'No network',
                       style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      status?.ssid.isNotEmpty == true
-                          ? status!.ssid
-                          : 'No network name available',
+                      loading
+                          ? 'Reading status…'
+                          : connected
+                          ? '● ESP32 is connected'
+                          : 'ESP32 Wi-Fi unavailable',
                       style: TextStyle(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.58),
+                        fontSize: 10,
+                        color: connected
+                            ? HomeDesign.cyan
+                            : Colors.orangeAccent,
                       ),
                     ),
                   ],
                 ),
               ),
-              if (loading)
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+              SizedBox(
+                width: 70,
+                child: TextButton(
+                  onPressed: bleConnected ? null : onConnectBle,
+                  child: Text(
+                    bleConnected ? 'Bluetooth ready' : 'Connect BLE',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 9),
+                  ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _InfoChip(
-                icon: Icons.route_rounded,
-                text: bleConnected
-                    ? 'Bluetooth ready'
-                    : (status?.source ?? 'No path'),
               ),
-              if (status?.ip.isNotEmpty == true)
-                _InfoChip(icon: Icons.lan_rounded, text: status!.ip),
-              if (status != null)
-                _InfoChip(
-                  icon: Icons.signal_wifi_4_bar_rounded,
-                  text: '${status!.rssi} dBm',
-                ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(
-                child: _SecondaryButton(
-                  label: bleConnected
-                      ? 'Bluetooth connected'
-                      : 'Connect Bluetooth backup',
-                  icon: Icons.bluetooth_rounded,
-                  onTap: bleConnected ? null : onConnectBle,
+              for (final (i, v) in [
+                (Icons.location_on_outlined, 'IP Address', status?.ip ?? '—'),
+                (Icons.router_outlined, 'Gateway', status?.gateway ?? '—'),
+                (
+                  Icons.signal_cellular_alt,
+                  'RSSI',
+                  status == null ? '—' : '${status!.rssi} dBm',
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _DangerButton(
-                  label: busy ? 'Working...' : 'Forget Wi-Fi',
-                  icon: Icons.delete_outline_rounded,
-                  onTap: busy ? null : onForget,
+              ].indexed) ...[
+                if (i > 0) const SizedBox(width: 6),
+                Expanded(
+                  child: HomeCard(
+                    padding: const EdgeInsets.all(7),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(v.$1, size: 18, color: HomeDesign.blue),
+                        const SizedBox(height: 4),
+                        Text(
+                          v.$2,
+                          style: const TextStyle(
+                            fontSize: 8,
+                            color: Color(0xFFA6BBDD),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(v.$3, style: const TextStyle(fontSize: 10)),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ],
