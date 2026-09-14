@@ -38,9 +38,9 @@ android {
 
     buildTypes {
         release {
-            // Test-only release build. No private production/upload key is
-            // configured or included in this source package.
-            signingConfig = signingConfigs.getByName("debug")
+               signingConfig = signingConfigs.getByName("debug")
+               isMinifyEnabled = false
+               isShrinkResources = false
         }
     }
 }
