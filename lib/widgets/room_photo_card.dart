@@ -73,21 +73,26 @@ class RoomPhotoCard extends StatelessWidget {
                     fit: StackFit.expand,
                     children: [
                       imageBytes == null
-                          ? ReferenceArt.room(room)
+                          ? Image.asset(
+                              defaultPhoto(room),
+                              fit: BoxFit.cover,
+                              alignment: imageAlignment,
+                              excludeFromSemantics: true,
+                            )
                           : Image.memory(imageBytes!, fit: BoxFit.cover),
                       Positioned(
                         right: 0,
                         top: 0,
                         child: SizedBox(
-                          width: 30,
-                          height: 28,
+                          width: 44,
+                          height: 44,
                           child: IconButton(
                             tooltip: 'Change $room photo',
                             padding: EdgeInsets.zero,
                             onPressed: onChangeImage,
                             icon: const Icon(
                               Icons.photo_camera_outlined,
-                              size: 13,
+                              size: 18,
                               color: Colors.white70,
                             ),
                           ),

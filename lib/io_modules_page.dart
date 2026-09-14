@@ -402,7 +402,7 @@ class _IoModulesPageState extends State<IoModulesPage> {
                     SizedBox(
                       width: 120,
                       child: HomePrimaryButton(
-                        label: 'Add Module',
+                        label: 'Add',
                         icon: Icons.add,
                         onPressed: _saving || _modules.length >= 16
                             ? null
@@ -517,14 +517,7 @@ class _IoModulesPageState extends State<IoModulesPage> {
         children: [
           Row(
             children: [
-              const SizedBox(
-                width: 75,
-                height: 60,
-                child: ReferenceArt(
-                  asset: 'assets/images/reference_10.png',
-                  crop: Rect.fromLTWH(170, 768, 161, 108),
-                ),
-              ),
+              const HomeGlowIcon(Icons.memory_rounded, size: 54),
               const SizedBox(width: 9),
               Expanded(
                 child: Column(
@@ -597,7 +590,7 @@ class _IoModulesPageState extends State<IoModulesPage> {
                         isExpanded: true,
                         underline: const SizedBox.shrink(),
                         value: module['busId'] as int,
-                        style: const TextStyle(
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           fontSize: 11,
                           color: Colors.white,
                         ),

@@ -25,7 +25,12 @@ class _ReferenceEnergyState extends State<ReferenceEnergy> {
     String number(String key, [String unit = '']) =>
         e[key] is num ? '${(e[key] as num).toStringAsFixed(1)}$unit' : '—$unit';
     return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 16),
+      padding: EdgeInsets.fromLTRB(
+        14,
+        8,
+        14,
+        16 + MediaQuery.paddingOf(context).bottom,
+      ),
       children: [
         HomeHero(
           title: 'Energy',

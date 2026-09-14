@@ -1459,6 +1459,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
         .where((n) => !n.read)
         .length;
     return Scaffold(
+      extendBody: true,
       body: _WallpaperBackground(
         child: SafeArea(
           bottom: false,
@@ -1483,31 +1484,28 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
       ),
       bottomNavigationBar: isDesktop
           ? null
-          : HomeBackground(
-              child: SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 4, 0, 0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (selectedIndex == 0) ...[
-                        HomeVoiceButton(
-                          onPressed: () =>
-                              unawaited(_showEllieAssistant(assistantName)),
-                          label: 'Talk to $assistantName',
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-                      HomeBottomNav(
-                        index: selectedIndex,
-                        unreadCount: unread,
-                        onChanged: (i) =>
-                            ref.read(selectedNavIndexProvider.notifier).state =
-                                i,
+          : SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 4, 0, 0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (selectedIndex == 0) ...[
+                      HomeVoiceButton(
+                        onPressed: () =>
+                            unawaited(_showEllieAssistant(assistantName)),
+                        label: 'Talk to $assistantName',
                       ),
+                      const SizedBox(height: 10),
                     ],
-                  ),
+                    HomeBottomNav(
+                      index: selectedIndex,
+                      unreadCount: unread,
+                      onChanged: (i) =>
+                          ref.read(selectedNavIndexProvider.notifier).state = i,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -3480,7 +3478,7 @@ class _HomeContentState extends ConsumerState<_HomeContent>
               top: 12,
               left: isDesktop ? padding : 14,
               right: isDesktop ? padding : 14,
-              bottom: 8,
+              bottom: 8 + MediaQuery.paddingOf(context).bottom,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -4105,45 +4103,49 @@ class _RoomGallery extends ConsumerWidget {
                 ),
               ],
             );
-            final actions = Row(
-              mainAxisSize: MainAxisSize.min,
+            final actions = Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 Tooltip(
                   message: 'Add or manage rooms',
                   child: OutlinedButton.icon(
                     onPressed: () => unawaited(_manageRooms(context)),
                     style: OutlinedButton.styleFrom(
-                      minimumSize: Size.zero,
+                      minimumSize: const Size(48, 44),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 7,
                         vertical: 9,
                       ),
-                      textStyle: const TextStyle(fontSize: 8),
+                      textStyle: Theme.of(
+                        context,
+                      ).textTheme.labelLarge?.copyWith(fontSize: 12),
                     ),
-                    icon: const Icon(Icons.grid_view, size: 12),
+                    icon: const Icon(Icons.grid_view, size: 17),
                     label: const Text('Manage Rooms'),
                   ),
                 ),
-                const SizedBox(width: 5),
                 Tooltip(
                   message: 'Add device',
                   child: OutlinedButton.icon(
                     onPressed: () => unawaited(_addDevice(context)),
                     style: OutlinedButton.styleFrom(
-                      minimumSize: Size.zero,
+                      minimumSize: const Size(48, 44),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 7,
                         vertical: 9,
                       ),
-                      textStyle: const TextStyle(fontSize: 8),
+                      textStyle: Theme.of(
+                        context,
+                      ).textTheme.labelLarge?.copyWith(fontSize: 12),
                     ),
-                    icon: const Icon(Icons.add, size: 12),
+                    icon: const Icon(Icons.add, size: 17),
                     label: const Text('Add Device'),
                   ),
                 ),
               ],
             );
-            if (largeText || constraints.maxWidth < 380) {
+            if (largeText || constraints.maxWidth < 560) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [heading, const SizedBox(height: 8), actions],
@@ -4544,7 +4546,12 @@ class _AlertsScreen extends ConsumerWidget {
     final unreadCount = notifications.where((item) => !item.read).length;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 16),
+      padding: EdgeInsets.fromLTRB(
+        14,
+        8,
+        14,
+        16 + MediaQuery.paddingOf(context).bottom,
+      ),
       children: [
         HomeHero(
           title: 'Notifications',
@@ -5359,7 +5366,12 @@ class _SettingsScreen extends ConsumerWidget {
       action: action,
     );
     return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+      padding: EdgeInsets.fromLTRB(
+        14,
+        8,
+        14,
+        12 + MediaQuery.paddingOf(context).bottom,
+      ),
       children: [
         const HomeHero(
           title: 'Settings',

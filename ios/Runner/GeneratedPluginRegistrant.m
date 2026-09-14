@@ -6,6 +6,18 @@
 
 #import "GeneratedPluginRegistrant.h"
 
+#if __has_include(<audio_session/AudioSessionPlugin.h>)
+#import <audio_session/AudioSessionPlugin.h>
+#else
+@import audio_session;
+#endif
+
+#if __has_include(<background_downloader/BackgroundDownloaderPlugin.h>)
+#import <background_downloader/BackgroundDownloaderPlugin.h>
+#else
+@import background_downloader;
+#endif
+
 #if __has_include(<cloud_firestore/FLTFirebaseFirestorePlugin.h>)
 #import <cloud_firestore/FLTFirebaseFirestorePlugin.h>
 #else
@@ -72,6 +84,12 @@
 @import flutter_contacts;
 #endif
 
+#if __has_include(<flutter_gemma/FlutterGemmaPlugin.h>)
+#import <flutter_gemma/FlutterGemmaPlugin.h>
+#else
+@import flutter_gemma;
+#endif
+
 #if __has_include(<flutter_tts/FlutterTtsPlugin.h>)
 #import <flutter_tts/FlutterTtsPlugin.h>
 #else
@@ -88,6 +106,18 @@
 #import <image_picker_ios/FLTImagePickerPlugin.h>
 #else
 @import image_picker_ios;
+#endif
+
+#if __has_include(<just_audio/JustAudioPlugin.h>)
+#import <just_audio/JustAudioPlugin.h>
+#else
+@import just_audio;
+#endif
+
+#if __has_include(<large_file_handler/LargeFileHandlerPlugin.h>)
+#import <large_file_handler/LargeFileHandlerPlugin.h>
+#else
+@import large_file_handler;
 #endif
 
 #if __has_include(<onesignal_flutter/OneSignalPlugin.h>)
@@ -141,6 +171,8 @@
 @implementation GeneratedPluginRegistrant
 
 + (void)registerWithRegistry:(NSObject<FlutterPluginRegistry>*)registry {
+  [AudioSessionPlugin registerWithRegistrar:[registry registrarForPlugin:@"AudioSessionPlugin"]];
+  [BackgroundDownloaderPlugin registerWithRegistrar:[registry registrarForPlugin:@"BackgroundDownloaderPlugin"]];
   [FLTFirebaseFirestorePlugin registerWithRegistrar:[registry registrarForPlugin:@"FLTFirebaseFirestorePlugin"]];
   [FirebaseFunctionsPlugin registerWithRegistrar:[registry registrarForPlugin:@"FirebaseFunctionsPlugin"]];
   [FilePickerPlugin registerWithRegistrar:[registry registrarForPlugin:@"FilePickerPlugin"]];
@@ -152,9 +184,12 @@
   [FLTFirebaseStoragePlugin registerWithRegistrar:[registry registrarForPlugin:@"FLTFirebaseStoragePlugin"]];
   [FlutterBluePlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterBluePlusPlugin"]];
   [FlutterContactsPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterContactsPlugin"]];
+  [FlutterGemmaPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterGemmaPlugin"]];
   [FlutterTtsPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterTtsPlugin"]];
   [HapticFeedbackPlugin registerWithRegistrar:[registry registrarForPlugin:@"HapticFeedbackPlugin"]];
   [FLTImagePickerPlugin registerWithRegistrar:[registry registrarForPlugin:@"FLTImagePickerPlugin"]];
+  [JustAudioPlugin registerWithRegistrar:[registry registrarForPlugin:@"JustAudioPlugin"]];
+  [LargeFileHandlerPlugin registerWithRegistrar:[registry registrarForPlugin:@"LargeFileHandlerPlugin"]];
   [OneSignalPlugin registerWithRegistrar:[registry registrarForPlugin:@"OneSignalPlugin"]];
   [PermissionHandlerPlugin registerWithRegistrar:[registry registrarForPlugin:@"PermissionHandlerPlugin"]];
   [SharedPreferencesPlugin registerWithRegistrar:[registry registrarForPlugin:@"SharedPreferencesPlugin"]];

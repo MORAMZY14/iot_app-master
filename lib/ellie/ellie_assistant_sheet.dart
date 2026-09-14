@@ -1254,13 +1254,10 @@ class _MessageBubble extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (!message.isUser) ...[
-          const SizedBox(
-            width: 44,
-            height: 44,
-            child: ReferenceArt(
-              asset: 'assets/images/reference_4.png',
-              crop: Rect.fromLTWH(166, 439, 86, 88),
-            ),
+          const HomeGlowIcon(
+            Icons.assistant_rounded,
+            size: 44,
+            color: HomeDesign.cyan,
           ),
           const SizedBox(width: 9),
         ],

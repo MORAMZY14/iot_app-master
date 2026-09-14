@@ -1,4 +1,4 @@
-platform :ios, '16.0'
+platform :ios, '16.4'
 
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
@@ -41,7 +41,7 @@ post_install do |installer|
     target.build_configurations.each do |config|
       # flutter_gemma/MediaPipe GenAI requires iOS 16. Keep every transitive
       # CocoaPod aligned so CocoaPods cannot resolve part of the graph at 15.
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.4'
     end
   end
 end

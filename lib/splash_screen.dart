@@ -165,7 +165,7 @@ class _SplashBackground extends StatelessWidget {
               stops: [0, .25, .8, 1],
             ).createShader(r),
             blendMode: BlendMode.dstIn,
-            child: ReferenceArt.house,
+            child: const HomePhotograph(),
           ),
         ),
         child,
@@ -178,7 +178,7 @@ class _SplashLogo extends StatelessWidget {
   const _SplashLogo();
   @override
   Widget build(BuildContext context) =>
-      const SizedBox(width: 168, height: 168, child: ReferenceArt.logo);
+      const SizedBox(width: 168, height: 168, child: HomeBrandMark());
 }
 
 class _LoadingPill extends StatelessWidget {

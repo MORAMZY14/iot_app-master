@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'adaptive_home_navigation.dart';
 
 /// Native components shared by every screen in the reference design.
 abstract final class HomeDesign {
@@ -165,62 +166,25 @@ class HomeCard extends StatelessWidget {
   }
 }
 
-class ReferenceArt extends StatelessWidget {
-  const ReferenceArt({super.key, required this.asset, required this.crop});
-  final String asset;
-  final Rect crop;
-  static const house = ReferenceArt(
-    asset: 'assets/images/reference_1.png',
-    crop: Rect.fromLTWH(134, 930, 670, 350),
-  );
-  static const logo = ReferenceArt(
-    asset: 'assets/images/reference_1.png',
-    crop: Rect.fromLTWH(320, 475, 296, 293),
-  );
-  static const mic = ReferenceArt(
-    asset: 'assets/images/reference_4.png',
-    crop: Rect.fromLTWH(395, 1207, 145, 145),
-  );
-  static Widget room(String room) {
-    final n = room.toLowerCase();
-    return ReferenceArt(
-      asset: 'assets/images/reference_3.png',
-      crop: RegExp(r'bed|نوم').hasMatch(n)
-          ? const Rect.fromLTWH(483, 752, 300, 100)
-          : RegExp(r'kitchen|مطبخ').hasMatch(n)
-          ? const Rect.fromLTWH(157, 933, 300, 102)
-          : RegExp(r'bath|حمام').hasMatch(n)
-          ? const Rect.fromLTWH(483, 933, 300, 102)
-          : const Rect.fromLTWH(157, 752, 300, 100),
-    );
-  }
-
+class HomePhotograph extends StatelessWidget {
+  const HomePhotograph({super.key});
   @override
-  Widget build(BuildContext context) => ClipRect(
-    child: FittedBox(
-      fit: BoxFit.cover,
-      child: SizedBox(
-        width: crop.width,
-        height: crop.height,
-        child: Stack(
-          clipBehavior: Clip.hardEdge,
-          children: [
-            Positioned(
-              left: -crop.left,
-              top: -crop.top,
-              width: 941,
-              height: 1672,
-              child: Image.asset(
-                asset,
-                width: 941,
-                height: 1672,
-                fit: BoxFit.fill,
-                excludeFromSemantics: true,
-              ),
-            ),
-          ],
-        ),
-      ),
+  Widget build(BuildContext context) => Image.asset(
+    HomeDesign.house,
+    fit: BoxFit.cover,
+    excludeFromSemantics: true,
+  );
+}
+
+class HomeBrandMark extends StatelessWidget {
+  const HomeBrandMark({super.key});
+  @override
+  Widget build(BuildContext context) => const FittedBox(
+    child: Icon(
+      Icons.home_rounded,
+      color: HomeDesign.cyan,
+      size: 100,
+      shadows: [Shadow(color: HomeDesign.blue, blurRadius: 22)],
     ),
   );
 }
@@ -298,7 +262,7 @@ class HomeHero extends StatelessWidget {
                 colors: [Colors.white, Colors.white, Colors.transparent],
                 stops: [0, .58, 1],
               ).createShader(r),
-              child: ReferenceArt.house,
+              child: const HomePhotograph(),
             ),
           ),
         if (photograph)
@@ -435,6 +399,7 @@ class HomePrimaryButton extends StatelessWidget {
         shadowColor: Colors.transparent,
         disabledBackgroundColor: Colors.black26,
         minimumSize: const Size.fromHeight(48),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -506,7 +471,17 @@ class HomeVoiceButton extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              ReferenceArt.mic,
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: listening
+                        ? [HomeDesign.violet, HomeDesign.blue]
+                        : [HomeDesign.blue, const Color(0xFF19378A)],
+                  ),
+                  border: Border.all(color: Colors.white54, width: 1.2),
+                ),
+              ),
               Material(
                 color: Colors.transparent,
                 child: IconButton(
@@ -514,7 +489,7 @@ class HomeVoiceButton extends StatelessWidget {
                   tooltip: label,
                   icon: Icon(
                     listening ? Icons.stop_rounded : Icons.mic_none,
-                    color: listening ? Colors.white : Colors.transparent,
+                    color: onPressed == null ? Colors.white38 : Colors.white,
                     size: 40,
                   ),
                 ),
@@ -565,7 +540,7 @@ class _WavePainter extends CustomPainter {
     ];
     for (var i = 0; i < heights.length; i++) {
       final x = i * size.width / heights.length;
-      final h = heights[i] * size.height / 2;
+      final h = heights[i] * size.height / 2 * (active ? 1 : .45);
       canvas.drawLine(
         Offset(x, size.height / 2 - h),
         Offset(x, size.height / 2 + h),
@@ -588,73 +563,10 @@ class HomeBottomNav extends StatelessWidget {
   final int index, unreadCount;
   final ValueChanged<int> onChanged;
   @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-      gradient: const LinearGradient(
-        colors: [Color(0xFF101827), Color(0xFF070D17)],
-      ),
-      border: Border.all(color: HomeDesign.border),
-    ),
-    child: Row(
-      children: [
-        for (final (i, item) in const [
-          (Icons.home_rounded, 'Home'),
-          (Icons.bar_chart_rounded, 'Energy'),
-          (Icons.notifications_none_rounded, 'Alerts'),
-          (Icons.settings_outlined, 'Settings'),
-        ].indexed)
-          Expanded(
-            child: Semantics(
-              selected: index == i,
-              child: InkWell(
-                onTap: () => onChanged(i),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Badge(
-                        isLabelVisible: i == 2 && unreadCount > 0,
-                        label: Text('$unreadCount'),
-                        child: Icon(
-                          item.$1,
-                          size: 28,
-                          color: index == i
-                              ? const Color(0xFF9DAEFF)
-                              : const Color(0xFF8191B3),
-                          shadows: index == i
-                              ? [
-                                  const Shadow(
-                                    color: Color(0xFF452BFF),
-                                    blurRadius: 13,
-                                  ),
-                                  const Shadow(
-                                    color: Color(0xFF287DFF),
-                                    blurRadius: 20,
-                                  ),
-                                ]
-                              : null,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        item.$2,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: index == i
-                              ? const Color(0xFFAAAFFF)
-                              : const Color(0xFF9FAFCF),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    ),
+  Widget build(BuildContext context) => AdaptiveHomeNavigation(
+    index: index,
+    unreadCount: unreadCount,
+    onChanged: onChanged,
   );
 }
 

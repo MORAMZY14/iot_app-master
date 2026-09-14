@@ -677,7 +677,7 @@ class _CompactHeader extends StatelessWidget {
               ],
               stops: [0, .2, .7, 1],
             ).createShader(r),
-            child: ReferenceArt.house,
+            child: const HomePhotograph(),
           ),
         ),
         Column(
