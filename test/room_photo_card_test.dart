@@ -21,6 +21,19 @@ void main() {
     icons.addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
     await icons.load();
   });
+  testWidgets('climate distinguishes missing readings from zero', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: Scaffold(
+      body: RoomClimate(temperature: 0, humidity: 0),
+    )));
+    expect(find.text('0.0°C'), findsOneWidget);
+    expect(find.text('0%'), findsOneWidget);
+    expect(find.text('Home sensor'), findsOneWidget);
+    await tester.pumpWidget(const MaterialApp(home: Scaffold(
+      body: RoomClimate(temperature: double.nan),
+    )));
+    expect(find.text('—'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
   for (final brightness in Brightness.values) {
     testWidgets('room photo and actions at 320px, $brightness', (tester) async {
       tester.view.physicalSize = const Size(320, 640);

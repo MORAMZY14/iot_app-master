@@ -3484,10 +3484,13 @@ class _HomeContentState extends ConsumerState<_HomeContent>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 HomeHero(
-                  title: 'Good Evening',
-                  height: 140,
-                  compact: true,
-                  subtitle: 'Your home feels just right.',
+                  title: DateTime.now().hour < 12
+                      ? 'Good Morning'
+                      : DateTime.now().hour < 18 ? 'Good Afternoon' : 'Good Evening',
+                  height: 156,
+                  topLabel: 'My Home',
+                  topDetail: '${rooms.length} rooms · ${devicesList.where((d) => d is Map && d['state'] == true).length} devices on',
+                  subtitle: flame ? 'Check your home safety alert.' : 'Your home, at a glance.',
                   trailing: IconButton.filledTonal(
                     tooltip: 'Settings',
                     onPressed: () =>
@@ -3529,6 +3532,8 @@ class _HomeContentState extends ConsumerState<_HomeContent>
                   onRoomSelected: (r) => setState(() => _selectedRoom = r),
                   rooms: rooms,
                   devices: devicesList,
+                  temperature: temp,
+                  humidity: hum,
                 ),
                 const SizedBox(height: 8),
                 if (_isLoadingDevices)
@@ -3580,6 +3585,8 @@ class _HomeContentState extends ConsumerState<_HomeContent>
                 else
                   _FocusedRoomPanel(
                     room: selectedRoom,
+                    temperature: temp,
+                    humidity: hum,
                     devices: roomDevices,
                     onToggle: _controlDevice,
                     onOptions: _showDeviceOptions,
@@ -3955,12 +3962,15 @@ Alignment _roomArtAlignment(String roomName) {
 }
 
 class _RoomGallery extends ConsumerWidget {
+  final double? temperature, humidity;
   final String selectedRoom;
   final ValueChanged<String> onRoomSelected;
   final List<String> rooms;
   final List<dynamic> devices;
 
   const _RoomGallery({
+    this.temperature,
+    this.humidity,
     required this.selectedRoom,
     required this.onRoomSelected,
     required this.rooms,
@@ -4183,9 +4193,11 @@ class _RoomGallery extends ConsumerWidget {
                   for (final room in rooms)
                     SizedBox(
                       width: cardWidth,
-                      height: 97 + (scale - 1) * 64,
+                      height: 168 + (scale - 1) * 112,
                       child: RoomPhotoCard(
                         room: room,
+                        temperature: temperature,
+                        humidity: humidity,
                         deviceCount: devices
                             .where((d) => d is Map && d['room'] == room)
                             .length,
@@ -4223,6 +4235,7 @@ class _RoomGallery extends ConsumerWidget {
 }
 
 class _FocusedRoomPanel extends ConsumerWidget {
+  final double? temperature, humidity;
   final String room;
   final Set<String> pendingIds;
   final List<dynamic> devices;
@@ -4232,6 +4245,8 @@ class _FocusedRoomPanel extends ConsumerWidget {
   final Future<void> Function(bool state) onSetAll;
 
   const _FocusedRoomPanel({
+    this.temperature,
+    this.humidity,
     required this.room,
     required this.pendingIds,
     required this.devices,
@@ -4260,6 +4275,8 @@ class _FocusedRoomPanel extends ConsumerWidget {
                       fontWeight: FontWeight.w500,
                     ),
                   ),
+                  RoomClimate(temperature: temperature, humidity: humidity),
+                  const SizedBox(height: 5),
                   Text(
                     '${devices.where((d) => d is Map && d['state'] == true).length} devices active',
                     style: const TextStyle(

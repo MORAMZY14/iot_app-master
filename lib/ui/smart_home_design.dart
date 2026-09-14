@@ -233,8 +233,11 @@ class HomeHero extends StatelessWidget {
     this.compact = false,
     this.photograph = true,
     this.showTop = true,
+    this.topLabel,
+    this.topDetail,
   });
   final String title, subtitle;
+  final String? topLabel, topDetail;
   final IconData icon;
   final Widget? trailing;
   final double height;
@@ -289,11 +292,24 @@ class HomeHero extends StatelessWidget {
                     ),
                     child: Icon(icon, size: 21, color: Colors.white),
                   ),
-                  const Spacer(),
+                  if (topLabel != null) ...[
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(topLabel!, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white, fontSize: 15,
+                            fontWeight: FontWeight.w600)),
+                        if (topDetail != null)
+                          Text(topDetail!, maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                      ],
+                    )),
+                  ] else const Spacer(),
                   if (trailing != null) trailing!,
                 ],
               ),
-            const SizedBox(height: 8),
+            SizedBox(height: topLabel == null ? 8 : 22),
             Text(
               title,
               style: const TextStyle(
@@ -314,7 +330,7 @@ class HomeHero extends StatelessWidget {
             ),
           ],
         ),
-        if (photograph)
+        if (photograph && topLabel == null)
           const Positioned(
             right: 0,
             top: 43,
@@ -441,7 +457,9 @@ class HomeVoiceButton extends StatelessWidget {
   final bool listening, large;
   final String label;
   @override
-  Widget build(BuildContext context) => Row(
+  Widget build(BuildContext context) => !large
+      ? _VoiceDock(onPressed: onPressed, label: label, listening: listening)
+      : Row(
     mainAxisAlignment: MainAxisAlignment.center,
     children: [
       Flexible(
@@ -742,6 +760,72 @@ class ReferenceChoice extends StatelessWidget {
               style: const TextStyle(fontSize: 10, color: Colors.white),
             ),
           ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _VoiceDock extends StatelessWidget {
+  const _VoiceDock({required this.onPressed, required this.label, required this.listening});
+  final VoidCallback? onPressed;
+  final String label;
+  final bool listening;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 18),
+    child: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(32),
+            gradient: const LinearGradient(colors: [Color(0xF01B2546), Color(0xF00E1425)]),
+            border: Border.all(color: const Color(0xFF58629C)),
+            boxShadow: const [BoxShadow(color: Color(0x334162FF), blurRadius: 18)],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(32),
+              onTap: onPressed,
+              child: Padding(
+                padding: const EdgeInsets.all(7),
+                child: Row(children: [
+                  Container(
+                    width: 48, height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const RadialGradient(center: Alignment(-.4, -.5),
+                        colors: [Color(0xFF9A87FF), HomeDesign.blue, Color(0xFF292478)]),
+                      border: Border.all(color: Colors.white54),
+                      boxShadow: const [BoxShadow(color: Color(0x66753CFF), blurRadius: 12)],
+                    ),
+                    child: Icon(listening ? Icons.stop_rounded : Icons.mic_rounded,
+                      color: onPressed == null ? Colors.white38 : Colors.white, size: 27),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(listening ? 'Listening…' : label,
+                        style: const TextStyle(color: Colors.white, fontSize: 13,
+                          fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 3),
+                      Text(listening ? 'Tap to stop' : 'Try “Turn off all lights”',
+                        style: const TextStyle(color: Color(0xFFB4C0DE), fontSize: 10)),
+                    ],
+                  )),
+                  const SizedBox(width: 8),
+                  ExcludeSemantics(child: CustomPaint(size: const Size(32, 24),
+                    painter: _WavePainter(listening))),
+                  const SizedBox(width: 5),
+                ]),
+              ),
+            ),
+          ),
         ),
       ),
     ),
