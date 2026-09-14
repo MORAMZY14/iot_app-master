@@ -276,12 +276,6 @@ void main() {
       );
     });
     await tester.runAsync(() async {
-      for (final i in [1, 3, 4, 10]) {
-        await precacheImage(
-          AssetImage('assets/images/reference_$i.png'),
-          tester.element(find.byType(MaterialApp)),
-        );
-      }
       for (final name in ['living', 'bedroom', 'kitchen', 'bathroom']) {
         await precacheImage(
           AssetImage('assets/images/room_$name.png'),

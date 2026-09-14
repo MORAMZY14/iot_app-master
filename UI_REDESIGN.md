@@ -1,5 +1,7 @@
 # Smart Home 2.10 — reference UI implementation
 
+**2.11 correction:** runtime screenshot crops have been removed. See `REAL_UI_AND_IOS_GLASS.md` and `validation/real-ui-validation.md`. The results below describe the previous 2.10 release.
+
 This release applies the ten supplied designs to the Flutter app. It includes the complete 2.9 offline AI/training files and ESP32 firmware, plus the new native UI and bundled photos. It is source code; no signed release or physical-device deployment is included.
 
 ## What changed
