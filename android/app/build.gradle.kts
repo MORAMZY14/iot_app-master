@@ -12,7 +12,7 @@ android {
     namespace = "com.example.iot_app"
     // Keep resource linking deterministic in CI. Android 12 splash resources
     // require API 31+, and the current native dependencies are built for 35.
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
