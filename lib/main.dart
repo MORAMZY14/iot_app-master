@@ -13,7 +13,7 @@ import 'ellie/local_llm_service.dart';
 import 'app_logger.dart';
 
 
-const String appVersion = '3.3.0';
+const String appVersion = '3.3.1';
 
 
 
