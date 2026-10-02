@@ -37,10 +37,10 @@ void main() {
     );
     expect(find.byType(Image), findsNothing);
     expect(
-      tester.widget<Icon>(find.byIcon(Icons.mic_rounded)).color,
+      tester.widget<Icon>(find.byIcon(Icons.mic_none)).color,
       Colors.white,
     );
-    await tester.tap(find.text('Tap to speak'));
+    await tester.tap(find.byType(IconButton));
     await tester.pump();
     expect(listening, isTrue);
     expect(find.byIcon(Icons.stop_rounded), findsOneWidget);

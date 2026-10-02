@@ -1,0 +1,7 @@
+# Copy to android/key.properties, which is ignored by source control.
+# Paths are absolute, or relative to the android/ directory. On Windows use
+# forward slashes, or escape each backslash as \\ in this properties file.
+storeFile=/absolute/private/path/upload-keystore.jks
+storePassword=replace-with-private-store-password
+keyAlias=upload
+keyPassword=replace-with-private-key-password
