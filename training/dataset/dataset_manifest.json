@@ -1,0 +1,59 @@
+{
+  "tokenizer": "Qwen/Qwen3-1.7B",
+  "max_length": 512,
+  "largest_example_tokens": 512,
+  "split_unit": "source conversation; both languages of each authored scenario stay together",
+  "splits": {
+    "train": {
+      "examples": 1383,
+      "conversations": 1256,
+      "language": {
+        "Arabic": 528,
+        "English": 855
+      },
+      "multi_turn_examples": 106,
+      "sources": {
+        "CohereLabs/aya_dataset:arb:original": 477,
+        "HuggingFaceTB/smol-smoltalk:smol-magpie-ultra-short": 800,
+        "project-authored-synthetic": 72,
+        "project-legacy": 34
+      },
+      "sha256": "d75bbc24376172a24bf29216c83b2cf121d50f957daa22934b005c7427653edf"
+    },
+    "dev": {
+      "examples": 164,
+      "conversations": 145,
+      "language": {
+        "Arabic": 58,
+        "English": 106
+      },
+      "multi_turn_examples": 14,
+      "sources": {
+        "CohereLabs/aya_dataset:arb:original": 52,
+        "HuggingFaceTB/smol-smoltalk:smol-magpie-ultra-short": 100,
+        "project-authored-synthetic": 12
+      },
+      "sha256": "704ee467d612d1cfc0aafc001b4f0becae010b2909b994a7fef5801680205397"
+    },
+    "test": {
+      "examples": 181,
+      "conversations": 163,
+      "language": {
+        "English": 106,
+        "Arabic": 75
+      },
+      "multi_turn_examples": 14,
+      "sources": {
+        "HuggingFaceTB/smol-smoltalk:smol-magpie-ultra-short": 100,
+        "CohereLabs/aya_dataset:arb:original": 69,
+        "project-authored-synthetic": 12
+      },
+      "sha256": "10949670a90b33af6767519710f0e5c9803038cc56d728ecb3b02a1c56e391ca"
+    }
+  },
+  "rejected": {
+    "too_long": 1134,
+    "duplicate_context": 145
+  },
+  "note": "Filtered and spot-checked teaching data, not a guarantee of factual or dialect accuracy. No private app chat logs. No trained weights included."
+}

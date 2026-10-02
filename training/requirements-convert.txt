@@ -1,0 +1,2 @@
+# Separate Linux/WSL Python environment; do not mix with training or bundling.
+litert-torch==0.8.0

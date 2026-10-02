@@ -1,0 +1,3 @@
+# Separate Python 3.11 environment. This version includes tasks.python.genai.bundler.
+mediapipe==0.10.21
+sentencepiece==0.2.0
