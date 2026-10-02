@@ -11,6 +11,7 @@ import 'package:shimmer/shimmer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'ble_service.dart';
 import 'auth_service.dart';
+import 'login_screen.dart';
 import 'app_logger.dart';
 import 'app_constants.dart';
 import 'assistant_identity.dart';

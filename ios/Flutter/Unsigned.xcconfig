@@ -1,0 +1,10 @@
+// Release/Profile compilation is deliberately unsigned. No Apple team,
+// certificate or provisioning profile is needed to produce the .app bundle.
+// A signed distribution requires overriding these settings; see docs/RELEASE.md.
+CODE_SIGNING_ALLOWED = NO
+CODE_SIGNING_REQUIRED = NO
+CODE_SIGN_IDENTITY =
+DEVELOPMENT_TEAM =
+PROVISIONING_PROFILE =
+PROVISIONING_PROFILE_SPECIFIER =
+CODE_SIGN_STYLE = Manual

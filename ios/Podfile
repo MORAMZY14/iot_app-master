@@ -42,6 +42,14 @@ post_install do |installer|
       # flutter_gemma/MediaPipe GenAI requires iOS 16. Keep every transitive
       # CocoaPod aligned so CocoaPods cannot resolve part of the graph at 15.
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.4'
+      # Pods (including resource bundles) do not need an Apple team to compile.
+      # Keep all transitive targets unsigned, not just Runner, in CI.
+      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+      config.build_settings['CODE_SIGN_IDENTITY'] = ''
+      config.build_settings['DEVELOPMENT_TEAM'] = ''
+      config.build_settings['PROVISIONING_PROFILE'] = ''
+      config.build_settings['PROVISIONING_PROFILE_SPECIFIER'] = ''
       if target.name == 'permission_handler_apple'
         # Compile only the permission handlers used by provisioning and voice.
         # A missing macro leaves that permission permanently denied on iOS.
