@@ -12,6 +12,9 @@ import 'auth_service.dart';
 import 'ellie/local_llm_service.dart';
 import 'app_logger.dart';
 
+
+const String appVersion = '3.3.1';
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   // Account setup happens behind the first Flutter frame; native AI and feature
