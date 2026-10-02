@@ -42,6 +42,25 @@ post_install do |installer|
       # flutter_gemma/MediaPipe GenAI requires iOS 16. Keep every transitive
       # CocoaPod aligned so CocoaPods cannot resolve part of the graph at 15.
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.4'
+      if target.name == 'permission_handler_apple'
+        # Compile only the permission handlers used by provisioning and voice.
+        # A missing macro leaves that permission permanently denied on iOS.
+        definitions = config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] || ['$(inherited)']
+        definitions = [definitions] if definitions.is_a?(String)
+        definitions.reject! { |value| value.start_with?('PERMISSION_') }
+        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] = definitions + %w[
+          PERMISSION_MICROPHONE=1
+          PERMISSION_SPEECH_RECOGNIZER=1
+          PERMISSION_BLUETOOTH=1
+          PERMISSION_LOCATION_WHENINUSE=1
+          PERMISSION_LOCATION=0
+          PERMISSION_CAMERA=0
+          PERMISSION_PHOTOS=0
+          PERMISSION_CONTACTS=0
+          PERMISSION_NOTIFICATIONS=0
+          PERMISSION_MEDIA_LIBRARY=0
+        ]
+      end
     end
   end
 end

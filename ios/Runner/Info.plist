@@ -70,21 +70,6 @@
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 
-	<!-- CAMERA -->
-	<key>NSCameraUsageDescription</key>
-	<string>This app needs camera access.</string>
-
-	<!-- PHOTO LIBRARY -->
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs photo library access.</string>
-
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>This app saves images to your photo library.</string>
-
-	<!-- CONTACTS -->
-	<key>NSContactsUsageDescription</key>
-	<string>This app needs contacts access.</string>
-
 	<!-- MICROPHONE AND SPEECH RECOGNITION -->
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Your smart-home voice assistant uses the microphone to understand English and Arabic voice commands.</string>
@@ -96,12 +81,6 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>This app needs local network access to connect to smart home devices.</string>
 
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_http._tcp</string>
-		<string>_hap._tcp</string>
-	</array>
-
 	<!-- BLUETOOTH AND WI-FI PROVISIONING -->
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>This app uses Bluetooth to connect to and control your ESP32 smart home device.</string>
@@ -112,11 +91,35 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>This app needs location access to scan for nearby Wi-Fi networks when provisioning the ESP32.</string>
 
-	<!-- INTERNET AND LOCAL ESP32 HTTP ACCESS -->
+	<!-- LOCAL ESP32 HTTP ACCESS. iOS 17+ allows IP-range exceptions. On
+	     iOS 16.4 numeric IP connections are outside ATS domain enforcement. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoads</key>
+		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>10.0.0.0/8</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+			<key>172.16.0.0/12</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+			<key>192.168.0.0/16</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+			<key>169.254.0.0/16</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
 	</dict>
 
 </dict>

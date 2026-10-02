@@ -6,6 +6,7 @@ import UIKit
 @objc class AppDelegate: FlutterAppDelegate, AVSpeechSynthesizerDelegate {
   private let localSpeechSynthesizer = AVSpeechSynthesizer()
   private var pendingSpeechResult: FlutterResult?
+  private var activeSpeechUtterance: AVSpeechUtterance?
 
   override func application(
     _ application: UIApplication,
@@ -41,6 +42,14 @@ import UIKit
         binaryMessenger: controller.binaryMessenger
       )
       channel.setMethodCallHandler { [weak self] call, result in
+        if call.method == "stop" {
+          guard let self = self else {
+            result(false)
+            return
+          }
+          self.stopLocalSpeech(result: result)
+          return
+        }
         guard call.method == "speak" else {
           result(FlutterMethodNotImplemented)
           return
@@ -83,6 +92,15 @@ import UIKit
         return
       }
 
+      // Finish the previous request before starting another. A delayed
+      // didCancel callback is ignored by the utterance identity check below.
+      if self.pendingSpeechResult != nil {
+        self.finishLocalSpeech(success: false)
+      }
+      if self.localSpeechSynthesizer.isSpeaking {
+        self.localSpeechSynthesizer.stopSpeaking(at: .immediate)
+      }
+
       do {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(
@@ -92,9 +110,6 @@ import UIKit
         )
         try session.setActive(true)
 
-        if self.localSpeechSynthesizer.isSpeaking {
-          self.localSpeechSynthesizer.stopSpeaking(at: .immediate)
-        }
         self.pendingSpeechResult = result
 
         let utterance = AVSpeechUtterance(string: text)
@@ -103,6 +118,7 @@ import UIKit
         utterance.rate = language.lowercased().hasPrefix("ar") ? 0.42 : 0.46
         utterance.pitchMultiplier = 1.0
         utterance.volume = 1.0
+        self.activeSpeechUtterance = utterance
         self.localSpeechSynthesizer.speak(utterance)
       } catch {
         result(
@@ -116,10 +132,25 @@ import UIKit
     }
   }
 
+  private func stopLocalSpeech(result: @escaping FlutterResult) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else {
+        result(false)
+        return
+      }
+      // Resolve any pending speak future even if the system sends no delegate
+      // callback, and clear identity before a synchronous cancellation callback.
+      self.finishLocalSpeech(success: false)
+      self.localSpeechSynthesizer.stopSpeaking(at: .immediate)
+      result(true)
+    }
+  }
+
   func speechSynthesizer(
     _ synthesizer: AVSpeechSynthesizer,
     didFinish utterance: AVSpeechUtterance
   ) {
+    guard utterance === activeSpeechUtterance else { return }
     finishLocalSpeech(success: true)
   }
 
@@ -127,12 +158,14 @@ import UIKit
     _ synthesizer: AVSpeechSynthesizer,
     didCancel utterance: AVSpeechUtterance
   ) {
+    guard utterance === activeSpeechUtterance else { return }
     finishLocalSpeech(success: false)
   }
 
   private func finishLocalSpeech(success: Bool) {
     let result = pendingSpeechResult
     pendingSpeechResult = nil
+    activeSpeechUtterance = nil
     try? AVAudioSession.sharedInstance().setActive(
       false,
       options: .notifyOthersOnDeactivation
