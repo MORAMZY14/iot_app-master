@@ -1,6 +1,7 @@
 import java.security.KeyStore
 import java.security.cert.X509Certificate
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
@@ -75,18 +76,13 @@ val validateReleaseSigning = tasks.register("validateReleaseSigning") {
 
 android {
     namespace = "com.example.iot_app"
-    // Keep resource linking deterministic in CI. Android 12 splash resources
-    // require API 31+, and the current native dependencies are built for 35.
-    compileSdk = 35
+    // Native plugins require API 36; the minimum supported device API stays 24.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
     defaultConfig {
@@ -97,7 +93,8 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // MediaPipe GenAI local inference requires Android API 24 or newer.
         minSdk = 24
-        targetSdk = flutter.targetSdkVersion
+        // Keep target and compile APIs aligned with the reviewed release tools.
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -121,6 +118,12 @@ android {
                 "proguard-rules.pro",
             )
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
