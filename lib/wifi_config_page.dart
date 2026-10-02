@@ -2,13 +2,12 @@ import 'ui/wifi_credentials_card.dart';
 import 'ui/smart_home_design.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ui' as ui;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
+import 'network/home_http.dart' as http;
 
 import 'app_constants.dart';
 import 'ble_service.dart';
@@ -114,8 +113,6 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
     _manualSsidController.dispose();
     super.dispose();
   }
-
-  bool get _bleReady => ref.read(bleServiceProvider).isConnected;
 
   Future<String?> _lookupEspIp() async {
     if (_lastIp != null && _lastIp!.isNotEmpty) return _lastIp;
@@ -380,23 +377,6 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
     }
   }
 
-  Future<void> _openConnectSheet({EspWifiNetwork? network}) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => _WifiConnectSheet(
-        initialSsid: network?.ssid ?? _manualSsidController.text,
-        secure: network?.secure ?? true,
-        busy: _busy,
-        onConnect: (ssid, password) async {
-          Navigator.pop(sheetContext);
-          await _connectToNetwork(ssid, password);
-        },
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final ble = ref.watch(bleServiceProvider);
@@ -441,7 +421,7 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -455,8 +435,8 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
                         Text(
                           'Networks found by ESP32 (last scan)',
                           style: TextStyle(
-                            fontSize: 9,
-                            color: Color(0xFFA6BBDD),
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -467,7 +447,7 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
                     icon: const Icon(Icons.wifi, size: 15),
                     label: Text(
                       _scanning ? '…' : 'Scan',
-                      style: const TextStyle(fontSize: 10),
+                      style: const TextStyle(fontSize: 12),
                     ),
                   ),
                   IconButton(
@@ -545,133 +525,6 @@ class _WifiConfigPageState extends ConsumerState<WifiConfigPage> {
   }
 }
 
-class _WifiConnectSheet extends StatefulWidget {
-  final String initialSsid;
-  final bool secure;
-  final bool busy;
-  final Future<void> Function(String ssid, String password) onConnect;
-
-  const _WifiConnectSheet({
-    required this.initialSsid,
-    required this.secure,
-    required this.busy,
-    required this.onConnect,
-  });
-
-  @override
-  State<_WifiConnectSheet> createState() => _WifiConnectSheetState();
-}
-
-class _WifiConnectSheetState extends State<_WifiConnectSheet> {
-  late final TextEditingController _ssidController;
-  final TextEditingController _passwordController = TextEditingController();
-  bool _obscure = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _ssidController = TextEditingController(text: widget.initialSsid);
-  }
-
-  @override
-  void dispose() {
-    _ssidController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-      padding: EdgeInsets.only(bottom: bottom),
-      child: SafeArea(
-        top: false,
-        child: _GCard(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 46,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Connect ESP32 to Wi-Fi',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Enter the password for this network. The ESP32 will restart after saving.',
-                style: TextStyle(color: Colors.grey),
-              ),
-              const SizedBox(height: 18),
-              TextField(
-                controller: _ssidController,
-                textInputAction: TextInputAction.next,
-                decoration: InputDecoration(
-                  labelText: 'SSID',
-                  prefixIcon: const Icon(Icons.wifi_rounded),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _passwordController,
-                obscureText: _obscure,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => widget.onConnect(
-                  _ssidController.text.trim(),
-                  _passwordController.text,
-                ),
-                decoration: InputDecoration(
-                  labelText: widget.secure ? 'Password' : 'Password (optional)',
-                  prefixIcon: const Icon(Icons.lock_rounded),
-                  suffixIcon: IconButton(
-                    onPressed: () => setState(() => _obscure = !_obscure),
-                    icon: Icon(
-                      _obscure
-                          ? Icons.visibility_rounded
-                          : Icons.visibility_off_rounded,
-                    ),
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              _PrimaryButton(
-                label: 'Save and reconnect ESP32',
-                icon: Icons.check_rounded,
-                onTap: () => widget.onConnect(
-                  _ssidController.text.trim(),
-                  _passwordController.text,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _CurrentNetworkCard extends StatelessWidget {
   final EspWifiStatus? status;
   final bool loading;
@@ -703,9 +556,9 @@ class _CurrentNetworkCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Connected Network',
-                      style: TextStyle(fontSize: 11, color: Color(0xFFA6BBDD)),
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 5),
                     Text(
@@ -725,7 +578,7 @@ class _CurrentNetworkCard extends StatelessWidget {
                           ? '● ESP32 is connected'
                           : 'ESP32 Wi-Fi unavailable',
                       style: TextStyle(
-                        fontSize: 10,
+                        fontSize: 12,
                         color: connected
                             ? HomeDesign.cyan
                             : Colors.orangeAccent,
@@ -741,7 +594,7 @@ class _CurrentNetworkCard extends StatelessWidget {
                   child: Text(
                     bleConnected ? 'Bluetooth ready' : 'Connect BLE',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 9),
+                    style: const TextStyle(fontSize: 12),
                   ),
                 ),
               ),
@@ -770,13 +623,13 @@ class _CurrentNetworkCard extends StatelessWidget {
                         const SizedBox(height: 4),
                         Text(
                           v.$2,
-                          style: const TextStyle(
-                            fontSize: 8,
-                            color: Color(0xFFA6BBDD),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Text(v.$3, style: const TextStyle(fontSize: 10)),
+                        Text(v.$3, style: const TextStyle(fontSize: 12)),
                       ],
                     ),
                   ),
@@ -820,142 +673,6 @@ class _InlineError extends StatelessWidget {
   }
 }
 
-class _InfoChip extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  const _InfoChip({required this.icon, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: 15,
-            color: Theme.of(
-              context,
-            ).colorScheme.onSurface.withValues(alpha: 0.65),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.72),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniBadge extends StatelessWidget {
-  final String label;
-  final Color color;
-  const _MiniBadge({required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(999),
-      color: color.withValues(alpha: 0.14),
-      border: Border.all(color: color.withValues(alpha: 0.28)),
-    ),
-    child: Text(
-      label,
-      style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w800),
-    ),
-  );
-}
-
-class _PrimaryButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool busy;
-  final VoidCallback? onTap;
-  const _PrimaryButton({
-    required this.label,
-    required this.icon,
-    this.busy = false,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) => ElevatedButton.icon(
-    onPressed: onTap,
-    icon: busy
-        ? const SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white,
-            ),
-          )
-        : Icon(icon),
-    label: Text(label),
-    style: ElevatedButton.styleFrom(
-      backgroundColor: _DT.purple,
-      foregroundColor: Colors.white,
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-    ),
-  );
-}
-
-class _SecondaryButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final VoidCallback? onTap;
-  const _SecondaryButton({required this.label, required this.icon, this.onTap});
-
-  @override
-  Widget build(BuildContext context) => OutlinedButton.icon(
-    onPressed: onTap,
-    icon: Icon(icon),
-    label: Text(label),
-    style: OutlinedButton.styleFrom(
-      foregroundColor: _DT.blue,
-      side: BorderSide(color: _DT.blue.withValues(alpha: 0.4)),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-    ),
-  );
-}
-
-class _DangerButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final VoidCallback? onTap;
-  const _DangerButton({required this.label, required this.icon, this.onTap});
-
-  @override
-  Widget build(BuildContext context) => OutlinedButton.icon(
-    onPressed: onTap,
-    icon: Icon(icon),
-    label: Text(label),
-    style: OutlinedButton.styleFrom(
-      foregroundColor: _DT.red,
-      side: BorderSide(color: _DT.red.withValues(alpha: 0.4)),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-    ),
-  );
-}
-
 Future<bool?> _showConfirmDialog(
   BuildContext context, {
   required String title,
@@ -987,19 +704,6 @@ Future<bool?> _showConfirmDialog(
   );
 }
 
-Color _signalColor(int rssi) {
-  if (rssi >= -55) return _DT.green;
-  if (rssi >= -70) return _DT.amber;
-  return _DT.red;
-}
-
-IconData _signalIcon(int rssi) {
-  if (rssi >= -55) return Icons.signal_wifi_4_bar_rounded;
-  if (rssi >= -70) return Icons.network_wifi_3_bar_rounded;
-  if (rssi >= -82) return Icons.network_wifi_2_bar_rounded;
-  return Icons.network_wifi_1_bar_rounded;
-}
-
 void _showSnack(BuildContext context, String msg, Color color) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -1021,20 +725,3 @@ class _DT {
   static const red = Color(0xFFFF5252);
 }
 
-class _GCard extends StatelessWidget {
-  final Widget child;
-  final EdgeInsetsGeometry padding;
-  final BorderRadius borderRadius;
-  final Color? glowColor;
-
-  const _GCard({
-    required this.child,
-    this.padding = const EdgeInsets.all(16),
-    this.borderRadius = const BorderRadius.all(Radius.circular(22)),
-    this.glowColor,
-  });
-
-  @override
-  Widget build(BuildContext context) =>
-      HomeCard(padding: padding, glowColor: glowColor, child: child);
-}

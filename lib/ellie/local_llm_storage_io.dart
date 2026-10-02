@@ -4,11 +4,15 @@ import 'package:path/path.dart' as path_util;
 import 'package:path_provider/path_provider.dart';
 
 class LocalLlmStorage {
+  LocalLlmStorage({Future<Directory> Function()? supportDirectory})
+      : _supportDirectory = supportDirectory ?? getApplicationSupportDirectory;
+
+  final Future<Directory> Function() _supportDirectory;
   static const _directoryName = 'local_llm';
   Future<String?> persist(PlatformFile selected) async {
     final extension = path_util.extension(selected.name).toLowerCase();
     if (!const {'.task', '.gguf'}.contains(extension)) return null;
-    final support = await getApplicationSupportDirectory();
+    final support = await _supportDirectory();
     final directory = Directory(path_util.join(support.path, _directoryName));
     await directory.create(recursive: true);
     final destination = File(
@@ -57,7 +61,7 @@ class LocalLlmStorage {
     final direct = File(storedPath);
     if (path_util.isAbsolute(storedPath) && await direct.exists())
       return direct.path;
-    final support = await getApplicationSupportDirectory();
+    final support = await _supportDirectory();
     final candidate = File(
       path_util.join(
         support.path,
@@ -70,7 +74,12 @@ class LocalLlmStorage {
 
   Future<void> delete(String storedPath) async {
     final resolved = await resolve(storedPath);
-    if (resolved != null && await File(resolved).exists())
-      await File(resolved).delete();
+    if (resolved == null) return;
+    final support = await _supportDirectory();
+    if (!path_util.isWithin(
+      path_util.join(support.path, _directoryName),
+      resolved,
+    )) return;
+    if (await File(resolved).exists()) await File(resolved).delete();
   }
 }

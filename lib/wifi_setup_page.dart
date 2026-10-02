@@ -1,4 +1,4 @@
-import 'dart:ui' as ui;
+import 'ui/smart_home_design.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -48,7 +48,8 @@ class WifiSetupNotifier extends StateNotifier<WifiSetupState> {
 
   Future<bool> _requestPermissions() async {
     final status = await Permission.locationWhenInUse.request();
-    if (status.isDenied) {
+    if (!mounted) return false;
+    if (!status.isGranted) {
       state = state.copyWith(
         error: 'Location permission is required to scan Wi‑Fi networks.',
       );
@@ -62,21 +63,21 @@ class WifiSetupNotifier extends StateNotifier<WifiSetupState> {
   }
 
   Future<void> scanNetworks() async {
-    if (state.isScanning) return;
+    if (!mounted || state.isScanning) return;
     state = state.copyWith(isScanning: true, clearError: true);
 
-    final hasPermission = await _requestPermissions();
-    if (!hasPermission) {
-      state = state.copyWith(isScanning: false);
-      return;
-    }
-
     try {
+      final hasPermission = await _requestPermissions();
+      if (!mounted) return;
+      if (!hasPermission) {
+        state = state.copyWith(isScanning: false);
+        return;
+      }
       final list = await WiFiForIoTPlugin.loadWifiList();
       list.sort((a, b) => (b.level ?? -100).compareTo(a.level ?? -100));
-      state = state.copyWith(networks: list, isScanning: false);
+      if (mounted) state = state.copyWith(networks: list, isScanning: false);
     } catch (e) {
-      state = state.copyWith(isScanning: false, error: 'Failed to scan: $e');
+      if (mounted) state = state.copyWith(isScanning: false, error: 'Could not scan networks. Check Wi-Fi and permissions.');
     }
   }
 
@@ -93,7 +94,7 @@ class WifiSetupNotifier extends StateNotifier<WifiSetupState> {
       _showSnack(context, 'Please enter the Wi‑Fi password', _DT.red);
       return;
     }
-    if (state.isConnecting) return;
+    if (!mounted || state.isConnecting) return;
 
     state = state.copyWith(isConnecting: true, clearError: true);
     try {
@@ -110,10 +111,12 @@ class WifiSetupNotifier extends StateNotifier<WifiSetupState> {
         throw Exception('Connection failed');
       }
     } catch (e) {
-      state = state.copyWith(error: 'Connection error: $e');
-      _showSnack(context, state.error!, _DT.red);
+      if (mounted) {
+        state = state.copyWith(error: 'Could not connect. Check the Wi-Fi password.');
+        _showSnack(context, state.error!, _DT.red);
+      }
     } finally {
-      state = state.copyWith(isConnecting: false);
+      if (mounted) state = state.copyWith(isConnecting: false);
     }
   }
 }
@@ -146,141 +149,18 @@ class _GCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return ClipRRect(
-      borderRadius: borderRadius,
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            borderRadius: borderRadius,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? [
-                      Colors.white.withValues(alpha: 0.08),
-                      Colors.white.withValues(alpha: 0.03),
-                    ]
-                  : [
-                      Colors.white.withValues(alpha: 0.6),
-                      Colors.white.withValues(alpha: 0.3),
-                    ],
-            ),
-            border: Border.all(
-              color: dangerBorder
-                  ? _DT.red.withValues(alpha: 0.45)
-                  : (isDark
-                        ? Colors.white.withValues(alpha: 0.1)
-                        : Colors.white.withValues(alpha: 0.4)),
-              width: 0.8,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: isDark
-                    ? Colors.black.withValues(alpha: 0.3)
-                    : Colors.black.withValues(alpha: 0.05),
-                blurRadius: 20,
-                offset: const Offset(0, 6),
-              ),
-              if (glowColor != null)
-                BoxShadow(
-                  color: glowColor!.withValues(alpha: isDark ? 0.18 : 0.12),
-                  blurRadius: 24,
-                ),
-            ],
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => HomeCard(padding: padding, glowColor: dangerBorder ? _DT.red : glowColor, child: child);
 }
 
 class _WallpaperBackground extends StatelessWidget {
-  final Widget child;
   const _WallpaperBackground({required this.child});
-
+  final Widget child;
   @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final w = MediaQuery.of(context).size.width;
-
-    return RepaintBoundary(
-      child: Stack(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? const [
-                        Color(0xFF0B0D1A),
-                        Color(0xFF0F1228),
-                        Color(0xFF0B0D1A),
-                      ]
-                    : const [
-                        Color(0xFFF0F2FF),
-                        Color(0xFFEEEBFF),
-                        Color(0xFFF0F4FF),
-                      ],
-              ),
-            ),
-          ),
-          Positioned(
-            top: -100,
-            left: -80,
-            child: _Blob(
-              color: isDark ? const Color(0xFF1A1060) : const Color(0xFFCCC8FF),
-              size: w * 0.9,
-            ),
-          ),
-          Positioned(
-            top: 300,
-            right: -100,
-            child: _Blob(
-              color: isDark ? const Color(0xFF2A0D50) : const Color(0xFFE8D8FF),
-              size: w * 0.75,
-            ),
-          ),
-          Positioned(
-            bottom: 80,
-            left: 0,
-            child: _Blob(
-              color: isDark ? const Color(0xFF0A2A1A) : const Color(0xFFBEF0D8),
-              size: w * 0.6,
-            ),
-          ),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _Blob extends StatelessWidget {
-  final Color color;
-  final double size;
-  const _Blob({required this.color, required this.size});
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: size,
-    height: size,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      gradient: RadialGradient(
-        colors: [color.withValues(alpha: 0.5), color.withValues(alpha: 0)],
-      ),
-    ),
-  );
+  Widget build(BuildContext context) => HomeBackground(child: child);
 }
 
 void _showSnack(BuildContext context, String msg, Color color) {
+  if (!context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(msg, style: const TextStyle(color: Colors.white)),
@@ -305,39 +185,11 @@ class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: AppBar(
-          title: Text(title),
-          backgroundColor: isDark
-              ? Colors.black.withValues(alpha: 0.3)
-              : Colors.white.withValues(alpha: 0.3),
-          elevation: 0,
-          actions: [
-            if (onAction != null)
-              IconButton(
-                icon: Icon(
-                  actionIcon,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                onPressed: onAction,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
+  Widget build(BuildContext context) => AppBar(title: Text(title), actions: [IconButton(icon: Icon(actionIcon), onPressed: onAction, tooltip: 'Scan networks')]);
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 }
 
-// ============================================================
-// 3. Main UI (Redesigned)
-// ============================================================
 class WifiSetupPage extends ConsumerStatefulWidget {
   const WifiSetupPage({super.key});
 

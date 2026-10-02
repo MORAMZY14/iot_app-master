@@ -2,12 +2,11 @@ import 'ui/wifi_credentials_card.dart';
 import 'ui/smart_home_design.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
+import 'network/home_http.dart' as http;
 
 import 'app_constants.dart';
 import 'ble_service.dart';
@@ -181,22 +180,6 @@ class _ProvisionPageState extends ConsumerState<ProvisionPage> {
     }
   }
 
-  Future<void> _openConnectSheet({ProvisionWifiNetwork? network}) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => _ProvisionConnectSheet(
-        initialSsid: network?.ssid ?? _manualSsidController.text,
-        secure: network?.secure ?? true,
-        onConnect: (ssid, password) async {
-          Navigator.pop(sheetContext);
-          await _saveNetwork(ssid, password);
-        },
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final ble = ref.watch(bleServiceProvider);
@@ -233,11 +216,11 @@ class _ProvisionPageState extends ConsumerState<ProvisionPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Setup Access Point',
                           style: TextStyle(
-                            fontSize: 10,
-                            color: Color(0xFFA6BBDD),
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -255,7 +238,7 @@ class _ProvisionPageState extends ConsumerState<ProvisionPage> {
                             const Flexible(
                               child: Text(
                                 'AP password: 12345678',
-                                style: TextStyle(fontSize: 9),
+                                style: TextStyle(fontSize: 12),
                               ),
                             ),
                             IconButton(
@@ -276,14 +259,14 @@ class _ProvisionPageState extends ConsumerState<ProvisionPage> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  const Expanded(
+                  Expanded(
                     flex: 2,
                     child: Text(
                       '1. Connect to this AP\n2. Enter your Wi-Fi below\n3. Save and restart',
                       style: TextStyle(
-                        fontSize: 8,
+                        fontSize: 12,
                         height: 1.8,
-                        color: Color(0xFFA6BBDD),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -311,13 +294,13 @@ class _ProvisionPageState extends ConsumerState<ProvisionPage> {
                                   ble.isConnected
                                       ? 'Bluetooth connected'
                                       : 'Bluetooth optional',
-                                  style: const TextStyle(fontSize: 10),
+                                  style: const TextStyle(fontSize: 12),
                                 ),
-                                const Text(
+                                Text(
                                   'Use BLE for faster setup',
                                   style: TextStyle(
-                                    fontSize: 8,
-                                    color: Color(0xFFA6BBDD),
+                                    fontSize: 12,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                                   ),
                                 ),
                               ],
@@ -329,7 +312,7 @@ class _ProvisionPageState extends ConsumerState<ProvisionPage> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Expanded(
+                Expanded(
                   child: HomeCard(
                     child: Row(
                       children: [
@@ -343,12 +326,12 @@ class _ProvisionPageState extends ConsumerState<ProvisionPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Setup AP', style: TextStyle(fontSize: 11)),
+                              Text('Setup AP', style: TextStyle(fontSize: 12)),
                               Text(
                                 'ESP32_Config',
                                 style: TextStyle(
-                                  fontSize: 9,
-                                  color: Color(0xFFA6BBDD),
+                                  fontSize: 12,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ],
@@ -363,7 +346,7 @@ class _ProvisionPageState extends ConsumerState<ProvisionPage> {
             const SizedBox(height: 13),
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -376,7 +359,7 @@ class _ProvisionPageState extends ConsumerState<ProvisionPage> {
                       ),
                       Text(
                         'Select your 2.4 GHz Wi-Fi network',
-                        style: TextStyle(fontSize: 9, color: Color(0xFFA6BBDD)),
+                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -386,7 +369,7 @@ class _ProvisionPageState extends ConsumerState<ProvisionPage> {
                   icon: const Icon(Icons.refresh, size: 18),
                   label: Text(
                     _scanning ? 'Scanning…' : 'Scan now',
-                    style: const TextStyle(fontSize: 10),
+                    style: const TextStyle(fontSize: 12),
                   ),
                 ),
               ],
@@ -447,125 +430,6 @@ class _ProvisionPageState extends ConsumerState<ProvisionPage> {
   }
 }
 
-class _ProvisionConnectSheet extends StatefulWidget {
-  final String initialSsid;
-  final bool secure;
-  final Future<void> Function(String ssid, String password) onConnect;
-
-  const _ProvisionConnectSheet({
-    required this.initialSsid,
-    required this.secure,
-    required this.onConnect,
-  });
-
-  @override
-  State<_ProvisionConnectSheet> createState() => _ProvisionConnectSheetState();
-}
-
-class _ProvisionConnectSheetState extends State<_ProvisionConnectSheet> {
-  late final TextEditingController _ssidController;
-  final TextEditingController _passwordController = TextEditingController();
-  bool _obscure = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _ssidController = TextEditingController(text: widget.initialSsid);
-  }
-
-  @override
-  void dispose() {
-    _ssidController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-      padding: EdgeInsets.only(bottom: bottom),
-      child: SafeArea(
-        top: false,
-        child: _GCard(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 46,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Connect ESP32 to network',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'The ESP32 will save this network and restart.',
-                style: TextStyle(color: Colors.grey),
-              ),
-              const SizedBox(height: 18),
-              TextField(
-                controller: _ssidController,
-                decoration: InputDecoration(
-                  labelText: 'SSID',
-                  prefixIcon: const Icon(Icons.wifi_rounded),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _passwordController,
-                obscureText: _obscure,
-                decoration: InputDecoration(
-                  labelText: widget.secure ? 'Password' : 'Password (optional)',
-                  prefixIcon: const Icon(Icons.lock_rounded),
-                  suffixIcon: IconButton(
-                    onPressed: () => setState(() => _obscure = !_obscure),
-                    icon: Icon(
-                      _obscure
-                          ? Icons.visibility_rounded
-                          : Icons.visibility_off_rounded,
-                    ),
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              _PrimaryButton(
-                label: 'Save and restart ESP32',
-                icon: Icons.check_rounded,
-                onTap: () => widget.onConnect(
-                  _ssidController.text.trim(),
-                  _passwordController.text,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _InlineError extends StatelessWidget {
   final String message;
   const _InlineError({required this.message});
@@ -596,55 +460,6 @@ class _InlineError extends StatelessWidget {
   }
 }
 
-class _PrimaryButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool busy;
-  final VoidCallback? onTap;
-  const _PrimaryButton({
-    required this.label,
-    required this.icon,
-    this.busy = false,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) => ElevatedButton.icon(
-    onPressed: onTap,
-    icon: busy
-        ? const SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white,
-            ),
-          )
-        : Icon(icon),
-    label: Text(label),
-    style: ElevatedButton.styleFrom(
-      backgroundColor: _DT.purple,
-      foregroundColor: Colors.white,
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-    ),
-  );
-}
-
-Color _signalColor(int rssi) {
-  if (rssi >= -55) return _DT.green;
-  if (rssi >= -70) return _DT.amber;
-  return _DT.red;
-}
-
-IconData _signalIcon(int rssi) {
-  if (rssi >= -55) return Icons.signal_wifi_4_bar_rounded;
-  if (rssi >= -70) return Icons.network_wifi_3_bar_rounded;
-  if (rssi >= -82) return Icons.network_wifi_2_bar_rounded;
-  return Icons.network_wifi_1_bar_rounded;
-}
-
 void _showSnack(BuildContext context, String msg, Color color) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -661,25 +476,6 @@ void _showSnack(BuildContext context, String msg, Color color) {
 class _DT {
   static const purple = HomeDesign.blue;
   static const green = Color(0xFF4DFFA0);
-  static const amber = Color(0xFFFFB347);
-  static const blue = HomeDesign.cyan;
   static const red = Color(0xFFFF5252);
 }
 
-class _GCard extends StatelessWidget {
-  final Widget child;
-  final EdgeInsetsGeometry padding;
-  final BorderRadius borderRadius;
-  final Color? glowColor;
-
-  const _GCard({
-    required this.child,
-    this.padding = const EdgeInsets.all(16),
-    this.borderRadius = const BorderRadius.all(Radius.circular(22)),
-    this.glowColor,
-  });
-
-  @override
-  Widget build(BuildContext context) =>
-      HomeCard(padding: padding, glowColor: glowColor, child: child);
-}

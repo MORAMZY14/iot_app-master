@@ -1,12 +1,17 @@
 /// Conservative boundary between generated language and real home control.
-/// It rejects direction changes, widened "all devices" scope, and target words
-/// that were not present in the user's original request.
+/// A model may normalize an action, but must retain every target qualifier in
+/// its original order. Mixed actions and exclusions need deterministic parsing.
 class LocalCommandProposalGuard {
   LocalCommandProposalGuard._();
 
-  static bool preservesUserScope(String original, String proposed) {
-    final originalDirection = _firstPowerDirection(original);
-    final proposedDirection = _firstPowerDirection(proposed);
+  static bool preservesUserScope(
+    String original,
+    String proposed, {
+    String? assistantName,
+  }) {
+    if (_hasExclusion(original) || _hasExclusion(proposed)) return false;
+    final originalDirection = _powerDirection(original);
+    final proposedDirection = _powerDirection(proposed);
     if (originalDirection == null || proposedDirection != originalDirection) {
       return false;
     }
@@ -15,43 +20,61 @@ class LocalCommandProposalGuard {
     final proposedAll = _hasAllScope(proposed);
     if (originalAll != proposedAll) return false;
 
-    final originalTokens = _scopeTokens(original);
+    final originalTokens = _scopeTokens(
+      _withoutWakeWord(original, assistantName),
+    );
     final proposedTokens = _scopeTokens(proposed);
-    if (originalAll && proposedTokens.isEmpty) return true;
-    if (proposedTokens.isEmpty) return false;
-    return proposedTokens.every(originalTokens.contains);
+    if (originalTokens.isEmpty || proposedTokens.isEmpty) {
+      return originalAll && originalTokens.isEmpty && proposedTokens.isEmpty;
+    }
+    if (originalTokens.length != proposedTokens.length) return false;
+    for (var index = 0; index < originalTokens.length; index++) {
+      if (originalTokens[index] != proposedTokens[index]) return false;
+    }
+    return true;
   }
 
-  static String? _firstPowerDirection(String text) {
-    final normalized = text.toLowerCase();
-    final matches = <({int index, int end, String direction})>[];
-    for (final match in RegExp(
+  static String? _powerDirection(String text) {
+    final normalized = _normalize(text);
+    final directions = <String>{};
+    if (RegExp(
       r'\b(turn|switch|power)\b.{0,100}?\boff\b|\bdeactivate\b|'
       r'\bshut\s+down\b|'
       r'(اطف|اطفي|اقفل|اقفلي|اغلق|اطفاء)',
-    ).allMatches(normalized)) {
-      matches.add((index: match.start, end: match.end, direction: 'off'));
+    ).hasMatch(normalized)) {
+      directions.add('off');
     }
-    for (final match in RegExp(
+    if (RegExp(
       r'\b(turn|switch|power)\b.{0,100}?\bon\b|\bactivate\b|'
       r'\bstart\s+up\b|'
       r'(شغل|شغلي|افتح|افتحي|تشغيل)',
-    ).allMatches(normalized)) {
-      matches.add((index: match.start, end: match.end, direction: 'on'));
+    ).hasMatch(normalized)) {
+      directions.add('on');
     }
-    if (matches.isEmpty) return null;
-    matches.sort((left, right) {
-      final byStart = left.index.compareTo(right.index);
-      return byStart != 0 ? byStart : left.end.compareTo(right.end);
-    });
-    return matches.first.direction;
+    return directions.length == 1 ? directions.single : null;
   }
+
+  static bool _hasExclusion(String text) => RegExp(
+        r"\b(not|never|except|excluding|unless|without|leave|keep|but|dont|don't)\b|"
+        r'(?:^|\s)(لا|ليس|ليست|بدون|الا|عدا|باستثناء|متشغلش|متطفيش)(?=\s|$)',
+      ).hasMatch(_normalize(text));
 
   static bool _hasAllScope(String text) => RegExp(
         r'\b(all|everything|every device|whole room)\b|(كل|جميع)',
-      ).hasMatch(text.toLowerCase());
+      ).hasMatch(_normalize(text));
 
-  static Set<String> _scopeTokens(String text) {
+  static String _withoutWakeWord(String text, String? assistantName) {
+    final normalized = _normalize(text);
+    if (assistantName == null || assistantName.trim().isEmpty) return normalized;
+    return normalized.replaceFirst(
+      RegExp(
+        '^(?:(?:hey|please|يا)\\s+)*${RegExp.escape(_normalize(assistantName))}(?=\\s|\$)',
+      ),
+      ' ',
+    );
+  }
+
+  static List<String> _scopeTokens(String text) {
     const ignored = <String>{
       'a',
       'an',
@@ -65,26 +88,10 @@ class LocalCommandProposalGuard {
       'you',
       'just',
       'only',
-      'turn',
-      'switch',
-      'power',
-      'on',
-      'off',
-      'activate',
-      'deactivate',
-      'shut',
-      'down',
-      'start',
-      'up',
-      'leave',
       'all',
       'everything',
       'every',
       'whole',
-      'device',
-      'devices',
-      'room',
-      'rooms',
       'to',
       'my',
       'in',
@@ -98,30 +105,33 @@ class LocalCommandProposalGuard {
       'فقط',
       'و',
       'ثم',
-      'شغل',
-      'شغلي',
-      'افتح',
-      'افتحي',
-      'اطف',
-      'اطفي',
-      'اقفل',
-      'اقفلي',
-      'اغلق',
-      'تشغيل',
-      'اطفاء',
       'كل',
       'جميع',
-      'الجهاز',
-      'الاجهزة',
-      'الأجهزة',
-      'الغرفة',
-      'الاوضة',
     };
-    return text
-        .toLowerCase()
+    return _normalize(text)
+        .replaceAll(RegExp(r'\b(turn|switch|power)\s+(on|off)\b'), ' ')
+        .replaceAllMapped(
+          RegExp(r'\b(turn|switch|power)\s+(.+?)\s+(on|off)\b'),
+          (match) => ' ${match.group(2)} ',
+        )
+        .replaceAll(RegExp(r'\b(activate|deactivate|shut down|start up)\b'), ' ')
+        .replaceAll(
+          RegExp(
+            r'(?:^|\s)(شغل|شغلي|افتح|افتحي|اطف|اطفي|اطفئ|اقفل|اقفلي|اغلق|تشغيل|اطفاء)(?=\s|$)',
+          ),
+          ' ',
+        )
         .replaceAll(RegExp(r'[^a-z0-9\u0600-\u06ff]+'), ' ')
         .split(' ')
         .where((token) => token.isNotEmpty && !ignored.contains(token))
-        .toSet();
+        .toList();
   }
+
+  static String _normalize(String value) => value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[\u064b-\u065f\u0670\u0640]'), '')
+      .replaceAll('أ', 'ا')
+      .replaceAll('إ', 'ا')
+      .replaceAll('آ', 'ا')
+      .replaceAll('ى', 'ي');
 }

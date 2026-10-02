@@ -1,14 +1,59 @@
-# SmartHome 2.9
+# SmartHome 2.12.0
 
-Flutter smart-home app with a private offline assistant and ESP32 firmware.
+Updated Flutter mobile source with Material 3 screens, real room/device controls,
+light/dark/system themes, Firebase accounts, ESP32 HTTP/BLE control, and private
+English/Arabic voice assistance. Both imported Gemma `.task` and Qwen `.gguf`
+models, local music, ESP32 firmware, and laptop training tools are included.
+No room photographs or model weights are bundled in the Flutter app.
 
-Start with **[LAPTOP_TRAINING.md](LAPTOP_TRAINING.md)** for the Qwen3-1.7B workflow on the GTX 1650 4 GB laptop. It covers downloads, offline chat, fine-tuning, checkpoint resume, evaluation, GGUF export, and phone import.
+This package contains production hardening changes. Signed Android/iOS builds,
+Flutter analysis/tests, physical-device verification, and firmware/backend
+security completion are still required before public distribution.
 
-This version adds Qwen GGUF support, conversation context, editable saved preferences, and reviewed laptop corrections for later training. Existing Gemma `.task` imports, room UI improvements, offline voice checks, local HTTP/BLE controls, and the optimized ESP32 firmware remain included.
+## Start here
 
-- Dataset: `training/dataset/DATASET_CARD.md`
-- Completed checks and limitations: `VALIDATION-2.9.md`
-- Existing Gemma checkpoints and `.task` conversion: `GEMMA_LEGACY_GUIDE.md`
-- ESP32 setup: `esp32_firmware/SmartHomeOffline/README.md`
+- **[Production review and verification](docs/PRODUCTION_REVIEW.md)** — changes,
+  exact source/asset savings, remaining release blockers, and available checks.
+- **[Mobile build and signing](docs/RELEASE.md)** — pinned toolchain, dependency
+  refresh, signed Android artifacts, iOS distribution, and device checks.
+- **[LAPTOP_TRAINING.md](LAPTOP_TRAINING.md)** — Qwen3-1.7B workflow for the
+  GTX 1650 4 GB laptop: training, resume, evaluation, GGUF export and phone import.
+- **[ESP32 setup](esp32_firmware/SmartHomeOffline/README.md)** — current firmware
+  and hardware connections. Read the security limitations in the production
+  review before deploying this firmware outside a trusted development network.
+- **[Dataset](training/dataset/DATASET_CARD.md)** and
+  **[Gemma conversion](GEMMA_LEGACY_GUIDE.md)** — retained training resources.
 
-The LLM runs on the phone; training runs on the laptop. The original 4 MB ESP32 runs the device firmware, not the language model. No trained Qwen weights are included. The assistant has no cloud inference fallback; other existing app features still include Firebase services.
+## Prepare the mobile build
+
+Install Flutter **3.44.0** (Dart **3.12.0**) and JDK 17. From this directory:
+
+```sh
+bash tool/prepare_dependencies.sh --refresh
+dart format lib test tool
+flutter analyze --no-fatal-infos
+flutter test --coverage
+bash tool/validate_offline_integration.sh
+```
+
+The original lockfile is retained as the resolved baseline; the command performs
+real resolution, prunes removed dependencies and regenerates native registrants.
+Review and retain the resulting `pubspec.lock` and iOS `Podfile.lock`.
+
+Configure your private upload key using `android/key.properties.example`, then:
+
+```sh
+flutter build appbundle --release --obfuscate --split-debug-info=build/symbols
+flutter build apk --release --split-per-abi --obfuscate --split-debug-info=build/symbols
+```
+
+Keep the symbols and Android mapping with the matching release. Production
+Android builds reject missing signing credentials and debug certificates.
+Use a Mac and your distribution team/profile for an installable iOS archive.
+The verification and manually dispatched Android release workflows are in
+`.github/workflows/`; they do not automatically publish stores or push tags.
+
+The LLM runs on the phone; training runs on the laptop. The ESP32 executes
+hardware commands rather than the language model. No cloud inference fallback
+or remote model download was introduced. Historical validation files describe
+older versions and are not evidence that this update has been mobile-built.

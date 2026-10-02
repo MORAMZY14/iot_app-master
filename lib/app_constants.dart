@@ -2,12 +2,13 @@ class AppConfig {
   static const String databaseUrl =
       'https://iot-smart-home-81abd-default-rtdb.europe-west1.firebasedatabase.app';
   static const String esp32ApBaseUrl = 'http://192.168.4.1';
-  static const String fallbackEsp32Ip = '192.168.1.9';
+  // Empty means undiscovered. Never send a command to a guessed board.
+  static const String fallbackEsp32Ip = '';
   static const String esp32IpOverride = String.fromEnvironment(
     'ESP32_LOCAL_IP',
     defaultValue: '',
   );
-  static const String appVersion = '2.10.0';
+  static const String appVersion = '2.12.0';
 
   // Low-latency control path timings. Local Wi-Fi/BLE should fail fast so the
   // app can fall back to Firebase without making the button feel frozen.

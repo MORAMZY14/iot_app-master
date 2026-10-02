@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app_logger.dart';
 import 'app_constants.dart';
+import 'auth_service.dart';
+import 'network/foreground_poller.dart';
 
 // Must match the ESP32 BLE backup firmware.
 const String esp32DeviceName = 'ESP32_SmartHome';
@@ -17,8 +19,41 @@ const String commandCharUuid = 'd8e3b8a2-4f5c-4b6e-9a2f-1a2b3c4d5e6f';
 const String sensorCharUuid = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
 const String lightCharUuid = commandCharUuid;
 
+/// Only firmware replies can finish a command. A queued write is itself JSON
+/// with the command/requestId, but has no boolean `ok` response envelope.
+Map<String, dynamic>? decodeBleCommandResponse(
+  List<int> value, {
+  required String requestId,
+  required String expectedCmd,
+  required int baselineSequence,
+}) {
+  final text = utf8.decode(value, allowMalformed: true).trim();
+  if (text.isEmpty) return null;
+  Object? decoded;
+  try {
+    decoded = jsonDecode(text);
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! Map<String, dynamic> || decoded['ok'] is! bool) return null;
+  final responseRequestId = decoded['requestId']?.toString();
+  if (responseRequestId != null && responseRequestId != requestId) return null;
+  final sequence = decoded['responseSequence'];
+  if (sequence is num && sequence.toInt() <= baselineSequence) return null;
+  final responseCmd = (decoded['cmd'] ?? '').toString();
+  if (expectedCmd.isNotEmpty && responseCmd.isNotEmpty && responseCmd != expectedCmd) {
+    return null;
+  }
+  return decoded;
+}
+
 final bleServiceProvider = Provider<BleService>((ref) {
-  final service = BleService();
+  final service = BleService(controllerCode: () => ref.read(userEsp32CodeProvider.future));
+  ref.listen(authUserProvider, (previous, next) {
+    if (next.asData != null && previous?.asData?.value?.uid != next.asData!.value?.uid) {
+      unawaited(service.disconnect());
+    }
+  });
   ref.onDispose(service.dispose);
   return service;
 });
@@ -28,10 +63,18 @@ class BleService {
   BluetoothCharacteristic? _commandChar;
   StreamSubscription<BluetoothConnectionState>? _connectionSub;
   StreamSubscription<BluetoothAdapterState>? _adapterSub;
-  Timer? _sensorPollTimer;
+  StreamSubscription<List<ScanResult>>? _scanSub;
+  Completer<BluetoothDevice?>? _pendingScan;
+  Future<void>? _connectFuture;
+  Future<void> _commandTail = Future<void>.value();
+  ForegroundPoller? _sensorPoller;
   bool _disposed = false;
   bool _commandBusy = false;
+  bool _verifyingIdentity = false;
+  final Future<String?> Function()? _controllerCode;
   int _lastResponseSequence = 0;
+  int _connectionGeneration = 0;
+  int _requestSequence = 0;
 
   double temperature = 0.0;
   double humidity = 0.0;
@@ -64,36 +107,61 @@ class BleService {
         message.contains('bluetooth device chooser');
   }
 
-  BleService() {
-    _adapterSub = FlutterBluePlus.adapterState.listen((state) {
+  BleService({Stream<BluetoothAdapterState>? adapterStates, Future<String?> Function()? controllerCode})
+      : _controllerCode = controllerCode {
+    _adapterSub = (adapterStates ?? FlutterBluePlus.adapterState).listen((state) {
       if (_disposed) return;
       if (state != BluetoothAdapterState.on) {
-        _disconnect();
+        unawaited(_disconnect());
         _updateStatus(BleStatus.adapterOff);
       } else if (_currentStatus == BleStatus.adapterOff) {
         _updateStatus(BleStatus.disconnected);
       }
+    }, onError: (Object error, StackTrace stack) {
+      if (_disposed) return;
+      logDebug('BLE adapter stream failed (${error.runtimeType}).');
+      unawaited(_disconnect());
+      _updateStatus(BleStatus.error);
     });
   }
 
   Future<void> connect() async {
-    if (_disposed ||
-        _currentStatus == BleStatus.connected ||
-        _currentStatus == BleStatus.connecting ||
-        _currentStatus == BleStatus.scanning) {
+    if (_disposed || isConnected) return;
+    final pending = _connectFuture;
+    if (pending != null) {
+      await pending;
       return;
     }
+    final connection = _connect();
+    _connectFuture = connection;
+    try {
+      await connection;
+    } finally {
+      if (identical(_connectFuture, connection)) _connectFuture = null;
+    }
+  }
 
+  bool _isCurrentConnection(int generation) =>
+      !_disposed && generation == _connectionGeneration;
+
+  Future<void> _connect() async {
+    final generation = ++_connectionGeneration;
+    _clearControllerData();
     _updateStatus(BleStatus.scanning);
 
     StreamSubscription<List<ScanResult>>? scanSub;
     final foundDevice = Completer<BluetoothDevice?>();
+    _pendingScan = foundDevice;
+    BluetoothDevice? selectedDevice;
+    Object? scanError;
 
     try {
       await _safeStopScan();
+      if (!_isCurrentConnection(generation)) return;
 
       scanSub = FlutterBluePlus.scanResults.listen(
         (results) {
+          if (!_isCurrentConnection(generation)) return;
           for (final result in results) {
             final name = result.device.platformName.isNotEmpty
                 ? result.device.platformName
@@ -111,21 +179,28 @@ class BleService {
         },
         onError: (Object error, StackTrace stackTrace) {
           if (!foundDevice.isCompleted) {
-            foundDevice.completeError(error, stackTrace);
+            // Complete normally so an error arriving while startScan() is
+            // awaiting the browser chooser cannot become an unhandled Future.
+            scanError = error;
+            foundDevice.complete(null);
           }
         },
       );
+      _scanSub = scanSub;
 
       await FlutterBluePlus.startScan(
         timeout: const Duration(seconds: 4),
         withServices: kIsWeb ? [Guid(serviceUuid)] : [],
       );
 
-      _device = await foundDevice.future.timeout(
+      if (!_isCurrentConnection(generation)) return;
+      selectedDevice = await foundDevice.future.timeout(
         const Duration(seconds: 5),
         onTimeout: () => null,
       );
+      if (scanError != null) throw scanError!;
     } catch (e) {
+      if (!_isCurrentConnection(generation)) return;
       // On Flutter Web, closing/cancelling the browser Bluetooth chooser throws
       // NotFoundError. This is a normal user action, not a real app error.
       if (_isUserCancelledBluetoothError(e)) {
@@ -138,29 +213,49 @@ class BleService {
       return;
     } finally {
       await scanSub?.cancel();
+      if (identical(_scanSub, scanSub)) _scanSub = null;
+      if (identical(_pendingScan, foundDevice)) _pendingScan = null;
       await _safeStopScan();
     }
 
-    if (_device == null) {
+    if (!_isCurrentConnection(generation)) return;
+    if (selectedDevice == null) {
       _updateStatus(BleStatus.notFound);
       return;
     }
 
+    final device = selectedDevice;
+    _device = device;
     _updateStatus(BleStatus.connecting);
     try {
-      await _device!
-          .connect(autoConnect: false)
-          .timeout(const Duration(seconds: 6));
+      await device
+          .connect(autoConnect: false, timeout: const Duration(seconds: 6))
+          .timeout(const Duration(seconds: 8));
+      if (!_isCurrentConnection(generation)) {
+        await device.disconnect(queue: false, timeout: 3).timeout(
+          const Duration(seconds: 6),
+        );
+        return;
+      }
       await _connectionSub?.cancel();
-      _connectionSub = _device!.connectionState.listen((state) {
-        if (_disposed) return;
+      if (!_isCurrentConnection(generation)) return;
+      _connectionSub = device.connectionState.listen((state) {
+        if (!_isCurrentConnection(generation)) return;
         if (state == BluetoothConnectionState.disconnected) {
-          _disconnect(clearDevice: true);
+          unawaited(_disconnect());
           _updateStatus(BleStatus.disconnected);
         }
+      }, onError: (Object error, StackTrace stack) {
+        if (!_isCurrentConnection(generation)) return;
+        logDebug('BLE connection stream failed (${error.runtimeType}).');
+        unawaited(_disconnect());
+        _updateStatus(BleStatus.error);
       });
 
-      final services = await _device!.discoverServices();
+      final services = await device.discoverServices(timeout: 6).timeout(
+        const Duration(seconds: 8),
+      );
+      if (!_isCurrentConnection(generation)) return;
       for (final service in services) {
         if (service.uuid.toString().toLowerCase() != serviceUuid.toLowerCase())
           continue;
@@ -177,22 +272,35 @@ class BleService {
       }
 
       _lastResponseSequence = 0;
+      _verifyingIdentity = _controllerCode != null;
       _updateStatus(BleStatus.connected);
+      if (_controllerCode != null) {
+        final expectedCode = await _controllerCode();
+        if (!_isCurrentConnection(generation)) return;
+        await readControllerStatus();
+        if (!_isCurrentConnection(generation)) return;
+        if (expectedCode != null && controllerUniqueCode != expectedCode) {
+          throw StateError('This Bluetooth controller does not match your linked ESP32.');
+        }
+      }
+      _verifyingIdentity = false;
       await readSensorData();
+      if (!_isCurrentConnection(generation)) return;
       // Finish the initial device read before connect() returns. Starting this
       // unawaited raced the first assistant command and made it look as though
       // the ESP32 had frozen while Flutter rejected the overlapping command.
       await refreshDevices();
-      _startSensorPolling();
+      if (_isCurrentConnection(generation)) _startSensorPolling();
     } catch (e) {
+      if (!_isCurrentConnection(generation)) return;
       if (_isUserCancelledBluetoothError(e)) {
         logDebug('BLE connection cancelled by user: $e');
-        _disconnect();
+        await _disconnect();
         _updateStatus(BleStatus.disconnected);
         return;
       }
       logDebug('BLE connection error: $e');
-      _disconnect();
+      await _disconnect();
       _updateStatus(BleStatus.error);
     }
   }
@@ -201,104 +309,137 @@ class BleService {
     Map<String, dynamic> command, {
     Duration timeout = AppConfig.mediumTimeout,
   }) async {
-    if (!isConnected || _commandChar == null) {
+    final characteristic = _commandChar;
+    final generation = _connectionGeneration;
+    if (_disposed || !isConnected || characteristic == null) {
       throw StateError('BLE is not connected');
     }
-    if (_commandBusy) {
-      final waitUntil = DateTime.now().add(const Duration(seconds: 3));
-      while (_commandBusy && DateTime.now().isBefore(waitUntil)) {
-        await Future<void>.delayed(const Duration(milliseconds: 25));
-      }
-      if (_commandBusy) {
-        throw StateError('Another BLE command is still running');
-      }
+    if (timeout <= Duration.zero) {
+      throw ArgumentError.value(timeout, 'timeout', 'Must be positive');
     }
-
-    _commandBusy = true;
     final expectedCmd = (command['cmd'] ?? '').toString();
-    final requestId = DateTime.now().microsecondsSinceEpoch.toString();
+    if (_verifyingIdentity && expectedCmd != 'status') {
+      throw StateError('Wait for the Bluetooth controller to be verified.');
+    }
+    final requestId = '${generation}_${++_requestSequence}';
+    // Snapshot the payload now; callers may mutate their map while queued.
     final encodedCommand = utf8.encode(
       jsonEncode({...command, 'requestId': requestId}),
     );
+    if (encodedCommand.length > 511) {
+      throw const FormatException(
+        'Command is too long for Bluetooth. Use a shorter message.',
+      );
+    }
 
-    try {
-      // Record the current firmware response sequence before writing. Reads can
-      // otherwise return the previous characteristic value and falsely finish
-      // a new command before the ESP32 has processed it.
-      var baselineSequence = _lastResponseSequence;
+    void ensureConnected() {
+      if (!_isCurrentConnection(generation) ||
+          !isConnected ||
+          !identical(_commandChar, characteristic)) {
+        throw StateError('The BLE connection changed during the command');
+      }
+    }
+
+    // One GATT read/write exchange at a time, including background polling.
+    // A failed command completes the tail normally so later work can recover.
+    final previous = _commandTail;
+    final result = previous.then((_) async {
+      ensureConnected();
+      _commandBusy = true;
+      final elapsed = Stopwatch()..start();
+      Future<T> bounded<T>(Future<T> Function(int) operation) {
+        final remaining = timeout - elapsed.elapsed;
+        if (remaining <= Duration.zero) {
+          throw TimeoutException('BLE command timed out');
+        }
+        final seconds = (remaining.inMilliseconds + 999) ~/ 1000;
+        return operation(seconds < 1 ? 1 : seconds).timeout(remaining);
+      }
+
       try {
-        final before = await _commandChar!.read();
-        final beforeText = utf8.decode(before, allowMalformed: true).trim();
-        if (beforeText.isNotEmpty) {
-          final decodedBefore = jsonDecode(beforeText);
-          if (decodedBefore is Map &&
-              decodedBefore['responseSequence'] is num) {
-            final sequence = (decodedBefore['responseSequence'] as num).toInt();
-            if (sequence > baselineSequence) baselineSequence = sequence;
-            if (sequence > _lastResponseSequence) {
-              _lastResponseSequence = sequence;
+        var baselineSequence = _lastResponseSequence;
+        try {
+          final before = await bounded((seconds) => characteristic.read(timeout: seconds));
+          ensureConnected();
+          final beforeText = utf8.decode(before, allowMalformed: true).trim();
+          if (beforeText.isNotEmpty) {
+            final decoded = jsonDecode(beforeText);
+            if (decoded is Map && decoded['responseSequence'] is num) {
+              final sequence = (decoded['responseSequence'] as num).toInt();
+              if (sequence > baselineSequence) baselineSequence = sequence;
+              if (sequence > _lastResponseSequence) {
+                _lastResponseSequence = sequence;
+              }
             }
           }
+        } on FormatException {
+          // Older firmware can start with an empty or non-JSON value.
         }
-      } catch (_) {
-        // Firmware before 2.5 has no response sequence; retain compatibility.
-      }
+        ensureConnected();
+        await bounded((seconds) => characteristic.write(
+          encodedCommand,
+          withoutResponse: false,
+          // NimBLE firmware accepts a complete prepared write. Native iOS
+          // MTUs can be smaller than an assistant or Wi-Fi credentials JSON.
+          allowLongWrite: !kIsWeb,
+          timeout: seconds,
+        ));
+        ensureConnected();
 
-      if (encodedCommand.length > 511) {
-        throw const FormatException(
-          'Command is too long for Bluetooth. Use a shorter message.',
-        );
-      }
-      await _commandChar!.write(encodedCommand, withoutResponse: false);
-
-      final deadline = DateTime.now().add(timeout);
-      Map<String, dynamic>? last;
-      while (DateTime.now().isBefore(deadline)) {
-        await Future.delayed(const Duration(milliseconds: 60));
-        final value = await _commandChar!.read();
-        final text = utf8.decode(value, allowMalformed: true).trim();
-        if (text.isEmpty) continue;
-        final decoded = jsonDecode(text);
-        if (decoded is! Map) continue;
-        last = decoded.cast<String, dynamic>();
-        final responseRequestId = last['requestId']?.toString();
-        if (responseRequestId != null && responseRequestId != requestId)
-          continue;
-        final rawSequence = last['responseSequence'];
-        if (rawSequence is num) {
-          final sequence = rawSequence.toInt();
-          if (sequence <= baselineSequence) continue;
-          _lastResponseSequence = sequence;
-        }
-        final responseCmd = (last['cmd'] ?? '').toString();
-        if (expectedCmd.isEmpty ||
-            responseCmd.isEmpty ||
-            responseCmd == expectedCmd) {
-          if (last['ok'] == false) {
-            throw Exception(
-              last['error'] ?? last['message'] ?? 'BLE command failed',
-            );
+        while (elapsed.elapsed < timeout) {
+          await bounded((_) => Future<void>.delayed(const Duration(milliseconds: 60)));
+          ensureConnected();
+          final value = await bounded((seconds) => characteristic.read(timeout: seconds));
+          ensureConnected();
+          final decoded = decodeBleCommandResponse(
+            value,
+            requestId: requestId,
+            expectedCmd: expectedCmd,
+            baselineSequence: baselineSequence,
+          );
+          if (decoded == null) continue;
+          final rawSequence = decoded['responseSequence'];
+          if (rawSequence is num) {
+            _lastResponseSequence = rawSequence.toInt();
           }
-          return last;
+          if (decoded['ok'] == false) {
+            throw Exception(decoded['error'] ?? decoded['message'] ?? 'BLE command failed');
+          }
+          return decoded;
         }
+        throw TimeoutException('BLE command timed out');
+      } on TimeoutException {
+        // Future.timeout cannot cancel a native GATT operation. Close this
+        // connection before another queued command can reuse its transport.
+        final cleanup = _disconnect();
+        _updateStatus(BleStatus.error);
+        await cleanup;
+        rethrow;
+      } finally {
+        elapsed.stop();
+        _commandBusy = false;
       }
-      throw TimeoutException('BLE command timed out. Last response: $last');
-    } finally {
-      _commandBusy = false;
-    }
+    });
+    _commandTail = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
   }
 
   void _startSensorPolling() {
-    _sensorPollTimer?.cancel();
-    _sensorPollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
-      if (!_commandBusy) unawaited(readSensorData());
-    });
+    _sensorPoller?.dispose();
+    _sensorPoller = ForegroundPoller(
+      interval: const Duration(seconds: 8),
+      onPoll: () async {
+        if (!_disposed && isConnected && !_commandBusy) await readSensorData();
+      },
+    )..start();
   }
 
   Future<void> readSensorData() async {
     if (!isConnected) return;
+    final generation = _connectionGeneration;
     try {
       final data = await readControllerStatus();
+      if (!_isCurrentConnection(generation)) return;
       final temp = data['temp'] ?? data['temperature'];
       final hum = data['hum'] ?? data['humidity'];
       final flame = data['flame'];
@@ -312,17 +453,19 @@ class BleService {
   }
 
   Future<Map<String, dynamic>> readControllerStatus() async {
+    final generation = _connectionGeneration;
     final data = await sendCommand({
       'cmd': 'status',
     }, timeout: AppConfig.shortTimeout);
-    final ip = (data['ip'] ?? '').toString().trim();
-    if (ip.isNotEmpty && ip != '0.0.0.0' && ip != 'BLE') {
-      controllerIp = ip;
+    if (!_isCurrentConnection(generation)) {
+      throw StateError('The BLE connection changed during the status read');
     }
+    final ip = (data['ip'] ?? '').toString().trim();
+    controllerIp = ip.isNotEmpty && ip != '0.0.0.0' && ip != 'BLE' ? ip : null;
     final code = (data['uniqueCode'] ?? '').toString().trim();
     if (code.isNotEmpty) controllerUniqueCode = code;
     final name = (data['assistantName'] ?? '').toString().trim();
-    if (name.isNotEmpty) controllerAssistantName = name;
+    controllerAssistantName = name.isEmpty ? null : name;
     final version = (data['firmwareVersion'] ?? '').toString().trim();
     if (version.isNotEmpty) controllerFirmwareVersion = version;
     assistantReady = data['assistantReady'] == true;
@@ -331,10 +474,12 @@ class BleService {
 
   Future<void> refreshDevices() async {
     if (!isConnected) return;
+    final generation = _connectionGeneration;
     try {
       final response = await sendCommand({
         'cmd': 'get_devices',
       }, timeout: AppConfig.mediumTimeout);
+      if (!_isCurrentConnection(generation)) return;
       final rawDevices = response['devices'];
       if (rawDevices is List) {
         devices = rawDevices.whereType<Map>().map((e) {
@@ -390,16 +535,19 @@ class BleService {
   }
 
   Future<void> disconnect() async {
-    _disconnect(clearDevice: true);
+    final pending = _disconnect();
     _updateStatus(BleStatus.disconnected);
+    await pending;
   }
 
   Future<bool> controlDevice({required String id, required bool state}) async {
+    final generation = _connectionGeneration;
     final response = await sendCommand({
       'cmd': 'set_device',
       'id': id,
       'state': state,
     }, timeout: AppConfig.bleControlTimeout);
+    if (!_isCurrentConnection(generation)) return false;
     if (response['ok'] == true) {
       for (final d in devices) {
         if ((d['id'] ?? '').toString() == id) {
@@ -415,13 +563,20 @@ class BleService {
   }
 
   Future<void> setLightState(String room, bool state) async {
+    final generation = _connectionGeneration;
     final response = await sendCommand({
       'cmd': 'set_room',
       'room': room,
       'state': state,
     }, timeout: AppConfig.bleControlTimeout);
+    if (!_isCurrentConnection(generation)) return;
     if (response['ok'] == true) {
-      lights[room] = state;
+      for (final device in devices) {
+        if (device['room']?.toString() != room) continue;
+        device['state'] = state;
+        final id = (device['id'] ?? '').toString();
+        if (id.isNotEmpty) lights[id] = state;
+      }
       _updateStatus(BleStatus.dataUpdated);
     }
   }
@@ -493,7 +648,7 @@ class BleService {
         onTimeout: () => false,
       );
       if (scanning) {
-        await FlutterBluePlus.stopScan();
+        await FlutterBluePlus.stopScan().timeout(const Duration(seconds: 2));
       }
     } catch (e) {
       // FlutterBluePlus may print "already stopped" on some platforms. It is harmless.
@@ -501,21 +656,50 @@ class BleService {
     }
   }
 
-  void _disconnect({bool clearDevice = true}) {
-    _lastResponseSequence = 0;
-    _sensorPollTimer?.cancel();
-    _sensorPollTimer = null;
-    _connectionSub?.cancel();
+  void _clearControllerData() {
+    temperature = 0;
+    humidity = 0;
+    flameDetected = false;
+    controllerIp = null;
+    controllerUniqueCode = null;
+    controllerAssistantName = null;
+    controllerFirmwareVersion = null;
+    assistantReady = false;
+    lights = <String, bool>{};
+    devices = <Map<String, dynamic>>[];
+  }
+
+  Future<void> _disconnect() async {
+    _connectionGeneration++;
+    _verifyingIdentity = false;
+    _sensorPoller?.dispose();
+    _sensorPoller = null;
+    final scan = _scanSub;
+    _scanSub = null;
+    final pendingScan = _pendingScan;
+    _pendingScan = null;
+    if (pendingScan != null && !pendingScan.isCompleted) pendingScan.complete(null);
+    final connection = _connectionSub;
     _connectionSub = null;
     _lastResponseSequence = 0;
-    if (clearDevice) {
-      final device = _device;
-      _device = null;
-      if (device != null) {
-        unawaited(device.disconnect().catchError((_) {}));
-      }
-    }
+    final device = _device;
+    _device = null;
     _commandChar = null;
+    _clearControllerData();
+    try {
+      await Future.wait<void>([
+        if (scan != null) scan.cancel(),
+        if (connection != null) connection.cancel(),
+        if (scan != null || pendingScan != null) _safeStopScan(),
+        // Bypass FBP's global GATT queue so a stuck operation cannot block
+        // cancellation. Keep its Android minimum disconnect delay intact.
+        if (device != null) device.disconnect(queue: false, timeout: 3).timeout(
+          const Duration(seconds: 6),
+        ),
+      ]);
+    } catch (error) {
+      logDebug('BLE connection cleanup failed (${error.runtimeType}).');
+    }
   }
 
   void _updateStatus(BleStatus status) {
@@ -527,17 +711,18 @@ class BleService {
   }
 
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
-    _sensorPollTimer?.cancel();
-    _connectionSub?.cancel();
-    _adapterSub?.cancel();
-    final device = _device;
-    _device = null;
-    if (device != null) {
-      unawaited(device.disconnect().catchError((_) {}));
+    _currentStatus = BleStatus.disconnected;
+    final adapter = _adapterSub;
+    _adapterSub = null;
+    if (adapter != null) {
+      unawaited(adapter.cancel().catchError((Object error) {
+        logDebug('BLE adapter cleanup failed (${error.runtimeType}).');
+      }));
     }
-    unawaited(_safeStopScan());
-    _stateController.close();
+    unawaited(_disconnect());
+    unawaited(_stateController.close());
   }
 }
 

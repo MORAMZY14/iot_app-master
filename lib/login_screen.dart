@@ -1,5 +1,4 @@
 import 'ui/smart_home_design.dart';
-import 'dart:ui' as ui;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -11,11 +10,8 @@ import 'dashboard_page.dart';
 
 class _LoginColors {
   static const purple = HomeDesign.blue;
-  static const deepPurple = Color(0xFF34236F);
-  static const cyan = Color(0xFF4DDCFF);
   static const green = Color(0xFF4DFFA0);
   static const red = Color(0xFFFF5252);
-  static const amber = Color(0xFFFFB347);
 }
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -70,6 +66,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Future<void> _submit() async {
+    if (_isLoading) return;
     FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) return;
 
@@ -81,14 +78,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     try {
       final authService = await ref.read(authServiceProvider.future);
       final email = _emailController.text.trim();
-      final password = _passwordController.text.trim();
+      final password = _passwordController.text;
 
       if (_isLogin) {
         final user = await authService.signInWithEmailPassword(
           email: email,
           password: password,
         );
-        if (user != null && mounted) {
+        if (user != null && user.emailVerified && mounted) {
           HapticFeedback.lightImpact();
           Navigator.of(context).pushReplacement(
             PageRouteBuilder(
@@ -109,6 +106,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           HapticFeedback.lightImpact();
           _showVerificationDialog();
         }
+      }
+    } on ControllerLinkPendingException catch (e) {
+      if (mounted) {
+        setState(() => _errorMessage = e.toString());
+        await _showVerificationDialog();
       }
     } on FirebaseAuthException catch (e) {
       if (mounted) setState(() => _errorMessage = _getFirebaseErrorMessage(e));
@@ -285,10 +287,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           ),
           FilledButton(
             onPressed: () async {
+              final email = emailController.text.trim();
               Navigator.pop(context);
               try {
                 final authService = await ref.read(authServiceProvider.future);
-                await authService.resetPassword(emailController.text.trim());
+                await authService.resetPassword(email);
                 if (mounted) {
                   _showSnack(
                     'Password reset email sent',
@@ -318,13 +321,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: EdgeInsets.symmetric(
                 horizontal: isWide ? 48 : 18,
                 vertical: 12,
               ),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1020),
+                constraints: BoxConstraints(maxWidth: isWide ? 980 : 460),
                 child: FadeTransition(
                   opacity: _fadeAnimation,
                   child: SlideTransition(
@@ -367,18 +370,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             Text(
               _isLogin ? 'Welcome back' : 'Create account',
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 29, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: 29, fontWeight: FontWeight.w700, letterSpacing: -.6),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             Text(
               _isLogin
                   ? 'Control your home instantly.'
                   : 'Pair your ESP32 and start controlling devices.',
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 17, color: Color(0xFF98AED3)),
+              style: TextStyle(fontSize: 14, height: 1.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 25),
-            _ModeSwitch(isLogin: _isLogin, onChanged: _toggleMode),
+            _ModeSwitch(isLogin: _isLogin, onChanged: _isLoading ? null : _toggleMode),
             const SizedBox(height: 22),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 90),
@@ -406,8 +409,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               busy: _isLoading,
             ),
             const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text(
                   _isLogin ? 'No account yet?' : 'Already registered?',
@@ -424,87 +428,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               ],
             ),
             if (_isLogin) ...[
-              const SizedBox(height: 22),
-              const Row(
-                children: [
-                  Expanded(child: Divider()),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      'OR JUST KNOW',
-                      style: TextStyle(
-                        fontSize: 8,
-                        letterSpacing: 2,
-                        color: Color(0xFF7B94BA),
-                      ),
-                    ),
-                  ),
-                  Expanded(child: Divider()),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  for (final item in const [
-                    (Icons.bolt, 'Low latency', 'Real-time control'),
-                    (Icons.bluetooth, 'BLE backup', 'Offline ready'),
-                    (
-                      Icons.cloud_outlined,
-                      'Firebase auth',
-                      'Secure & reliable',
-                    ),
-                  ])
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 3),
-                        child: HomeCard(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 12,
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                item.$1,
-                                size: 21,
-                                color: HomeDesign.cyan,
-                                shadows: const [
-                                  Shadow(color: HomeDesign.blue, blurRadius: 9),
-                                ],
-                              ),
-                              const SizedBox(width: 5),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      item.$2,
-                                      style: const TextStyle(fontSize: 8.5),
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      item.$3,
-                                      style: const TextStyle(
-                                        fontSize: 7,
-                                        color: Color(0xFF8CA3C6),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 23),
-              TextButton(
-                onPressed: _isLoading ? null : _showForgotPasswordDialog,
-                child: const Text('Forgot password?'),
-              ),
+              const SizedBox(height: 8),
+              TextButton(onPressed: _isLoading ? null : _showForgotPasswordDialog, child: const Text('Forgot password?')),
             ],
+            const SizedBox(height: 20),
+            Wrap(alignment: WrapAlignment.center, spacing: 14, runSpacing: 8, children: [
+              for (final item in const [(Icons.bolt_outlined, 'Fast control'), (Icons.bluetooth_rounded, 'Local backup'), (Icons.lock_outline_rounded, 'Private assistant')])
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(item.$1, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 5),
+                  Text(item.$2, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                ]),
+            ]),
           ],
         ),
       ),
@@ -553,7 +488,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         _SmartTextField(
           controller: _nameController,
           label: 'Full name',
-          hint: 'Muhammed Ahmed',
+          hint: 'Your name',
           icon: Icons.person_outline_rounded,
           textInputAction: TextInputAction.next,
           validator: (value) => (value == null || value.trim().length < 2)
@@ -631,15 +566,6 @@ class _LoginBackground extends StatelessWidget {
   Widget build(BuildContext context) => HomeBackground(child: child);
 }
 
-class _GlassCard extends StatelessWidget {
-  final Widget child;
-  const _GlassCard({required this.child});
-
-  @override
-  Widget build(BuildContext context) =>
-      HomeCard(padding: const EdgeInsets.all(22), child: child);
-}
-
 class _HeroPanel extends StatelessWidget {
   const _HeroPanel();
   @override
@@ -653,90 +579,30 @@ class _HeroPanel extends StatelessWidget {
 class _CompactHeader extends StatelessWidget {
   const _CompactHeader();
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 195,
-    child: Stack(
-      clipBehavior: Clip.none,
-      fit: StackFit.expand,
-      children: [
-        Positioned(
-          left: -18,
-          right: -18,
-          top: 0,
-          bottom: 0,
-          child: ShaderMask(
-            blendMode: BlendMode.dstIn,
-            shaderCallback: (r) => const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.transparent,
-                Colors.white,
-                Colors.white,
-                Colors.transparent,
-              ],
-              stops: [0, .2, .7, 1],
-            ).createShader(r),
-            child: const HomePhotograph(),
-          ),
-        ),
-        Column(
-          children: [
-            const SizedBox(height: 17),
-            Icon(
-              Icons.home_outlined,
-              size: 70,
-              color: const Color(0xFF7CB5FF),
-              shadows: const [
-                Shadow(color: HomeDesign.blue, blurRadius: 15),
-                Shadow(color: HomeDesign.violet, blurRadius: 25),
-              ],
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'SMARTER\nBRIGHTER HOME',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                letterSpacing: 2.4,
-                color: Color(0xFFCCD9FF),
-              ),
-            ),
-          ],
-        ),
-      ],
-    ),
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 20),
+    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      const SizedBox(width: 48, height: 48, child: HomeBrandMark()),
+      const SizedBox(width: 14),
+      Text('Smart Home', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+    ]),
   );
 }
 
 class _ModeSwitch extends StatelessWidget {
   const _ModeSwitch({required this.isLogin, required this.onChanged});
   final bool isLogin;
-  final VoidCallback onChanged;
+  final VoidCallback? onChanged;
   @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Expanded(
-        child: ReferenceChoice(
-          label: 'Sign In',
-          icon: Icons.person,
-          selected: isLogin,
-          onTap: () {
-            if (!isLogin) onChanged();
-          },
-        ),
-      ),
-      Expanded(
-        child: ReferenceChoice(
-          label: 'Sign Up',
-          icon: Icons.person_add_alt_1,
-          selected: !isLogin,
-          onTap: () {
-            if (isLogin) onChanged();
-          },
-        ),
-      ),
+  Widget build(BuildContext context) => SegmentedButton<bool>(
+    segments: const [
+      ButtonSegment(value: true, icon: Icon(Icons.person_outline_rounded), label: Text('Sign In')),
+      ButtonSegment(value: false, icon: Icon(Icons.person_add_alt_1_rounded), label: Text('Sign Up')),
     ],
+    selected: {isLogin},
+    showSelectedIcon: false,
+    onSelectionChanged: onChanged == null ? null : (selected) { if (selected.first != isLogin) onChanged!(); },
+    style: SegmentedButton.styleFrom(minimumSize: const Size(48, 50)),
   );
 }
 
@@ -772,6 +638,9 @@ class _SmartTextField extends StatelessWidget {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
+      autocorrect: keyboardType != TextInputType.emailAddress && !label.toLowerCase().contains('password'),
+      enableSuggestions: !label.toLowerCase().contains('password'),
+      autofillHints: label == 'Email address' ? const [AutofillHints.email] : label == 'Password' ? const [AutofillHints.password] : null,
       obscureText: obscureText,
       validator: validator,
       textInputAction: textInputAction,

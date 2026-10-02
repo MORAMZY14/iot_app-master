@@ -3,7 +3,7 @@ import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'network/home_http.dart' as http;
 
 import 'app_constants.dart';
 
@@ -19,7 +19,6 @@ class IoModulesPage extends StatefulWidget {
 }
 
 class _IoModulesPageState extends State<IoModulesPage> {
-  static const _purple = HomeDesign.blue;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -80,6 +79,8 @@ class _IoModulesPageState extends State<IoModulesPage> {
             Uri.parse('${AppConfig.databaseUrl}/smartHome/$uid/hardware.json'),
           )
           .timeout(AppConfig.mediumTimeout);
+      if (response.statusCode != 200) throw StateError('Could not load the saved configuration.');
+      if (!mounted) return;
       Map<String, dynamic> hardware = _defaultHardware();
       if (response.statusCode == 200 &&
           response.body.isNotEmpty &&
@@ -256,6 +257,7 @@ class _IoModulesPageState extends State<IoModulesPage> {
   }
 
   Future<void> _save() async {
+    if (_saving || _loading || _error != null) return;
     final validation = _validateAll();
     if (validation != null) {
       _snack(validation, Colors.orange);
@@ -291,7 +293,7 @@ class _IoModulesPageState extends State<IoModulesPage> {
         }
       }
       if (mounted)
-        _snack('I/O module configuration saved.', const Color(0xFF25B36A));
+        _snack('Settings saved. The controller will confirm when applied.', const Color(0xFF25B36A));
     } catch (e) {
       if (mounted) _snack('Could not save: $e', Colors.redAccent);
     } finally {
@@ -299,15 +301,16 @@ class _IoModulesPageState extends State<IoModulesPage> {
     }
   }
 
-  Future<bool> _moduleUsed(String moduleId) async {
+  Future<bool?> _moduleUsed(String moduleId) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return false;
+    if (uid == null) return null;
     try {
       final response = await http
           .get(
             Uri.parse('${AppConfig.databaseUrl}/smartHome/$uid/devices.json'),
           )
           .timeout(AppConfig.shortTimeout);
+      if (response.statusCode == 200 && response.body == 'null') return false;
       if (response.statusCode == 200 && response.body != 'null') {
         final decoded = jsonDecode(response.body);
         if (decoded is Map) {
@@ -319,11 +322,17 @@ class _IoModulesPageState extends State<IoModulesPage> {
         }
       }
     } catch (_) {}
-    return false;
+    return null;
   }
 
   Future<void> _deleteModule(Map<String, dynamic> module) async {
-    if (await _moduleUsed(module['id'].toString())) {
+    final used = await _moduleUsed(module['id'].toString());
+    if (!mounted) return;
+    if (used == null) {
+      _snack('Could not check assigned devices. Refresh and try again.', Colors.orange);
+      return;
+    }
+    if (used) {
       _snack(
         'Move or delete devices assigned to this module first.',
         Colors.orange,
@@ -359,6 +368,7 @@ class _IoModulesPageState extends State<IoModulesPage> {
   }
 
   void _snack(String message, Color color) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -421,7 +431,7 @@ class _IoModulesPageState extends State<IoModulesPage> {
                       ),
                     ),
                   ),
-                const HomeCard(
+                HomeCard(
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -442,9 +452,9 @@ class _IoModulesPageState extends State<IoModulesPage> {
                             Text(
                               'Your ESP32 has two hardware I²C buses (I2C0 and I2C1) and supports PCF8574 I/O expander boards. Each bus can have multiple modules with different I²C addresses (0x20 – 0x27).',
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 12,
                                 height: 1.5,
-                                color: Color(0xFFA6BBDD),
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -501,7 +511,7 @@ class _IoModulesPageState extends State<IoModulesPage> {
                   label: _saving ? 'Saving…' : 'Save & apply changes',
                   icon: Icons.save_outlined,
                   busy: _saving,
-                  onPressed: _saving ? null : _save,
+                  onPressed: _saving || _error != null ? null : _save,
                 ),
               ],
             ),
@@ -531,9 +541,9 @@ class _IoModulesPageState extends State<IoModulesPage> {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
+                    Text(
                       'PCF8574',
-                      style: TextStyle(fontSize: 12, color: Color(0xFFA6BBDD)),
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -545,10 +555,10 @@ class _IoModulesPageState extends State<IoModulesPage> {
                     ? 'Offline'
                     : '—',
                 style: TextStyle(
-                  fontSize: 10,
+                  fontSize: 12,
                   color: ready == true
                       ? const Color(0xFF25E8B6)
-                      : const Color(0xFFA6BBDD),
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
               PopupMenuButton<String>(
@@ -579,11 +589,11 @@ class _IoModulesPageState extends State<IoModulesPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'I²C Bus',
                         style: TextStyle(
-                          fontSize: 10,
-                          color: Color(0xFFA6BBDD),
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                       DropdownButton<int>(
@@ -591,8 +601,8 @@ class _IoModulesPageState extends State<IoModulesPage> {
                         underline: const SizedBox.shrink(),
                         value: module['busId'] as int,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontSize: 11,
-                          color: Colors.white,
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                         items: const [
                           DropdownMenuItem(
@@ -622,9 +632,9 @@ class _IoModulesPageState extends State<IoModulesPage> {
                   padding: const EdgeInsets.all(8),
                   child: Column(
                     children: [
-                      const Text(
+                      Text(
                         'I²C Address',
-                        style: TextStyle(fontSize: 9, color: Color(0xFFA6BBDD)),
+                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                       TextButton(
                         onPressed: _saving ? null : () => _openEditor(module),
@@ -641,7 +651,7 @@ class _IoModulesPageState extends State<IoModulesPage> {
               Expanded(
                 child: Column(
                   children: [
-                    const Text('Enabled', style: TextStyle(fontSize: 9)),
+                    const Text('Enabled', style: TextStyle(fontSize: 12)),
                     SizedBox(
                       height: 48,
                       child: FittedBox(

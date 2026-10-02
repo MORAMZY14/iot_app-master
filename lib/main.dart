@@ -1,78 +1,76 @@
 import 'dart:async';
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dashboard_page.dart';
 import 'provisioning_page.dart';
 import 'wifi_config_page.dart';
 import 'io_modules_page.dart';
-import 'splash_screen.dart'; // 🔥 NEW: Import your splash screen
+import 'splash_screen.dart';
 import 'login_screen.dart';
-import 'app_constants.dart';
+import 'auth_service.dart';
+import 'ellie/local_llm_service.dart';
+import 'app_logger.dart';
 
-const String appVersion = '3.2.100';
+
+const String appVersion = '3.3.0';
+
+
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // The app only installs user-selected local files. No Hugging Face token,
-  // download URL, OpenAI key, or cloud fallback is configured.
-  FlutterGemma.initialize();
-  FlutterGemma.logLevel = GemmaLogLevel.none;
-
-  // Run the Flutter UI immediately. Firebase is initialized by the providers
-  // while the SplashScreen is already visible, so the user no longer sees a
-  // blank white screen while Firebase starts.
+  // Account setup happens behind the first Flutter frame; native AI and feature
+  // permissions are initialized only when the corresponding feature is used.
   runApp(const ProviderScope(child: MyApp()));
-
-  // Never present native permission sheets while iOS is still attaching its
-  // UIScene/Flutter view. iOS features request their permission when used.
-  // Android keeps the existing convenience request, but only after Flutter
-  // has rendered a real first frame.
-  if (!kIsWeb && Platform.isAndroid) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_requestAndroidPermissions());
-    });
-  }
 }
 
-Future<void> _requestAndroidPermissions() async {
-  try {
-    await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.locationWhenInUse,
-      Permission.microphone,
-    ].request();
-  } catch (e) {
-    debugPrint('Permission request skipped: $e');
-  }
-}
-
-class MyApp extends ConsumerWidget {
+class MyApp extends ConsumerStatefulWidget {
   const MyApp({super.key});
+  @override
+  ConsumerState<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends ConsumerState<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_restoreTheme());
+  }
+
+  Future<void> _restoreTheme() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString('appearance_theme');
+      if (!mounted || ref.read(themeModeProvider) != ThemeMode.system) return;
+      for (final mode in ThemeMode.values) {
+        if (mode.name == saved) ref.read(themeModeProvider.notifier).state = mode;
+      }
+    } catch (_) {
+      // Unavailable preferences should not delay starting the app.
+    }
+  }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final themeMode = ref.watch(themeModeProvider);
-
+  Widget build(BuildContext context) {
+    ref.listen(authUserProvider, (previous, next) {
+      final account = next.asData;
+      if (account == null) return;
+      if (previous?.asData != null && previous!.asData!.value?.uid == account.value?.uid) return;
+      unawaited(LocalLlmService.instance.resetForAccountChange(account.value?.uid)
+          .catchError((Object error, StackTrace stack) => logDebug('Assistant session reset failed: $error')));
+    });
     return MaterialApp(
       title: 'Smart Home',
       debugShowCheckedModeBanner: false,
       theme: lightTheme,
       darkTheme: darkTheme,
-      themeMode: themeMode,
-
-      // 🔥 NEW: Start with SplashScreen instead of StreamBuilder
+      themeMode: ref.watch(themeModeProvider),
       home: const SplashScreen(),
-
       routes: {
-        '/login': (context) => const LoginScreen(),
-        '/provision': (context) => const ProvisionPage(),
-        '/wifiConfig': (context) => const WifiConfigPage(),
-        '/ioModules': (context) => const IoModulesPage(),
+        '/login': (_) => const LoginScreen(),
+        '/provision': (_) => const ProvisionPage(),
+        '/wifiConfig': (_) => const WifiConfigPage(),
+        '/ioModules': (_) => const IoModulesPage(),
       },
     );
   }

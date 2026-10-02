@@ -263,25 +263,53 @@ class LocalMusicCommandPlan {
 /// Persistent, phone-only music library and player. Imported files are copied
 /// into the application sandbox and played directly from disk.
 class LocalMusicService extends ChangeNotifier {
-  LocalMusicService._() {
+  LocalMusicService._({
+    AudioPlayer? player,
+    LocalMusicStorage? storage,
+    Future<void> Function()? configureSession,
+    Future<FilePickerResult?> Function()? pickTracks,
+  })  : _player = player ?? AudioPlayer(),
+        _storage = storage ?? LocalMusicStorage(),
+        _configureSession = configureSession,
+        _pickTracks = pickTracks {
     _playerSubscription = _player.playerStateStream.listen((state) {
-      notifyListeners();
-      if (state.processingState == ProcessingState.completed) {
+      _notifyChanged();
+      if (state.playing && state.processingState == ProcessingState.completed) {
         unawaited(_advanceAfterCompletion());
       }
     });
   }
 
+  @visibleForTesting
+  factory LocalMusicService.forTesting({
+    required AudioPlayer player,
+    required LocalMusicStorage storage,
+    required Future<void> Function() configureSession,
+    required Future<FilePickerResult?> Function() pickTracks,
+  }) =>
+      LocalMusicService._(
+        player: player,
+        storage: storage,
+        configureSession: configureSession,
+        pickTracks: pickTracks,
+      );
+
   static final LocalMusicService instance = LocalMusicService._();
   static const String _libraryPreferenceKey = 'ellie_local_music_library_v1';
 
-  final AudioPlayer _player = AudioPlayer();
-  final LocalMusicStorage _storage = LocalMusicStorage();
+  final AudioPlayer _player;
+  final LocalMusicStorage _storage;
+  final Future<void> Function()? _configureSession;
+  final Future<FilePickerResult?> Function()? _pickTracks;
   final List<LocalMusicTrack> _tracks = <LocalMusicTrack>[];
   StreamSubscription<PlayerState>? _playerSubscription;
   AudioSession? _audioSession;
   Future<void>? _initialization;
   bool _autoAdvancing = false;
+  bool _importing = false;
+  bool _disposed = false;
+  Future<void> _operations = Future<void>.value();
+  String? _assistantPausedPath;
   int? _currentIndex;
 
   List<LocalMusicTrack> get tracks =>
@@ -294,97 +322,182 @@ class LocalMusicService extends ChangeNotifier {
         : _tracks[index];
   }
 
-  Future<void> initialize() => _initialization ??= _loadLibrary();
+  Future<void> initialize() => _initialization ??= _initializeLibrary();
+
+  Future<void> _initializeLibrary() async {
+    try {
+      await _loadLibrary();
+    } catch (_) {
+      _initialization = null;
+      rethrow;
+    }
+  }
 
   Future<void> _loadLibrary() async {
     final preferences = await SharedPreferences.getInstance();
     final encoded = preferences.getString(_libraryPreferenceKey);
     if (encoded == null || encoded.trim().isEmpty) return;
 
+    List<dynamic> decoded;
     try {
-      final decoded = jsonDecode(encoded);
-      if (decoded is! List) return;
-      for (final item in decoded) {
-        if (item is! Map) continue;
-        final track = LocalMusicTrack.fromJson(item.cast<String, dynamic>());
-        if (track.title.isEmpty || track.path.isEmpty) continue;
-        if (await _storage.exists(track.path)) _tracks.add(track);
-      }
-      await _saveLibrary();
-      notifyListeners();
-    } catch (_) {
+      final value = jsonDecode(encoded);
+      if (value is! List) return;
+      decoded = value;
+    } on FormatException {
       // A damaged preference should not prevent voice/device commands.
       _tracks.clear();
       await _saveLibrary();
+      return;
     }
+    final loaded = <LocalMusicTrack>[];
+    for (final item in decoded) {
+      if (item is! Map) continue;
+      final track = LocalMusicTrack.fromJson(item.cast<String, dynamic>());
+      if (track.title.isEmpty || track.path.isEmpty) continue;
+      if (await _storage.exists(track.path)) loaded.add(track);
+    }
+    _tracks
+      ..clear()
+      ..addAll(loaded);
+    await _saveLibrary();
+    _notifyChanged();
   }
 
   Future<int> importTracks() async {
-    await initialize();
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      allowMultiple: true,
-      withData: false,
-      withReadStream: true,
-    );
-    if (result == null) return 0;
-
-    var imported = 0;
-    for (final selected in result.files) {
-      final storedPath = await _storage.persist(selected);
-      if (storedPath == null) continue;
-      final baseTitle = _displayTitle(selected.name);
-      _tracks.add(
-        LocalMusicTrack(title: _uniqueTitle(baseTitle), path: storedPath),
-      );
-      imported++;
+    if (_importing || _disposed) return 0;
+    _importing = true;
+    try {
+      await initialize();
+      final result = _pickTracks != null
+          ? await _pickTracks!()
+          : await FilePicker.platform.pickFiles(
+              type: FileType.audio,
+              allowMultiple: true,
+              withData: false,
+              withReadStream: true,
+            );
+      if (result == null || _disposed) return 0;
+      final copied = <({String title, String path})>[];
+      var committed = false;
+      try {
+        try {
+          for (final selected in result.files) {
+            final storedPath = await _storage.persist(selected);
+            if (storedPath == null) continue;
+            copied.add((title: _displayTitle(selected.name), path: storedPath));
+          }
+        } finally {
+          if (copied.isNotEmpty) {
+            // File I/O stays outside the player queue so importing a large
+            // collection does not delay pause or other playback controls.
+            await _enqueue(() async {
+              final previousLength = _tracks.length;
+              try {
+                for (final file in copied) {
+                  _tracks.add(LocalMusicTrack(
+                    title: _uniqueTitle(file.title),
+                    path: file.path,
+                  ));
+                }
+                await _saveLibrary();
+                committed = true;
+              } catch (_) {
+                _tracks.removeRange(previousLength, _tracks.length);
+                rethrow;
+              }
+              _notifyChanged();
+            });
+          }
+        }
+        return copied.length;
+      } finally {
+        // Earlier successful copies are committed even if a later stream
+        // fails. Copies whose metadata could not be saved are cleaned up.
+        if (!committed) {
+          for (final file in copied) {
+            await _storage.delete(file.path);
+          }
+        }
+      }
+    } finally {
+      _importing = false;
     }
-    if (imported > 0) {
-      await _saveLibrary();
-      notifyListeners();
-    }
-    return imported;
   }
 
-  Future<void> removeTrack(LocalMusicTrack track) async {
+  Future<T> _enqueue<T>(Future<T> Function() operation) {
+    final result = _operations.then((_) async {
+      if (_disposed) throw StateError('The music player has closed.');
+      await initialize();
+      return operation();
+    });
+    // Keep the queue usable after a corrupt file or rejected player operation.
+    _operations = result.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stack) {},
+    );
+    return result;
+  }
+
+  void _notifyChanged() {
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<void> removeTrack(LocalMusicTrack track) => _enqueue(() async {
     final index = _tracks.indexWhere((item) => item.path == track.path);
     if (index < 0) return;
+    _assistantPausedPath = null;
     if (_currentIndex == index) {
       await _player.stop();
+    }
+    // Keep the entry available for retry if filesystem deletion fails.
+    await _storage.delete(track.path);
+    if (_currentIndex == index) {
       _currentIndex = null;
     } else if (_currentIndex != null && index < _currentIndex!) {
       _currentIndex = _currentIndex! - 1;
     }
     _tracks.removeAt(index);
-    await _storage.delete(track.path);
     await _saveLibrary();
-    notifyListeners();
-  }
+    _notifyChanged();
+  });
 
-  Future<void> playTrack(LocalMusicTrack track) async {
+  Future<void> playTrack(LocalMusicTrack track) => _enqueue(() async {
     final index = _tracks.indexWhere((item) => item.path == track.path);
     if (index < 0) throw StateError('That local song is no longer available.');
+    _assistantPausedPath = null;
     await _playIndex(index);
-  }
+  });
 
-  Future<void> pause() async {
+  Future<void> pause() => _enqueue(() async {
+    _assistantPausedPath = null;
     await _player.pause();
-    notifyListeners();
-  }
+    _notifyChanged();
+  });
 
-  Future<bool> pauseForAssistant() async {
+  Future<bool> pauseForAssistant() => _enqueue(() async {
+    _assistantPausedPath = null;
     if (!_player.playing) return false;
     await _player.pause();
-    notifyListeners();
-    return true;
-  }
+    _assistantPausedPath = currentTrack?.path;
+    _notifyChanged();
+    return _assistantPausedPath != null;
+  });
 
-  Future<void> resumeAfterAssistant() async {
-    if (currentTrack == null || _player.playing) return;
-    await _configureMusicSession();
-    unawaited(_player.play().catchError((Object _) {}));
-    notifyListeners();
-  }
+  Future<void> resumeAfterAssistant({bool onlyIfPausedByAssistant = false}) =>
+      _enqueue(() async {
+        if (currentTrack == null || _player.playing) return;
+        if (onlyIfPausedByAssistant &&
+            currentTrack?.path != _assistantPausedPath) return;
+        _assistantPausedPath = null;
+        await _configureMusicSession();
+        if (_disposed) return;
+        if (_player.processingState == ProcessingState.completed) {
+          await _player.seek(Duration.zero);
+        }
+        if (_disposed) return;
+        unawaited(_player.play().catchError((Object _) {}));
+        _notifyChanged();
+      });
 
   Future<LocalMusicCommandPlan> prepareCommand(
     LocalMusicIntent intent, {
@@ -448,7 +561,9 @@ class LocalMusicService extends ChangeNotifier {
             english: 'Resuming ${track.title}.',
             arabic: 'سأكمل ${track.title}.',
           ),
-          afterReply: resumeAfterAssistant,
+          afterReply: () => currentTrack?.path == track.path
+              ? resumeAfterAssistant()
+              : playTrack(track),
         );
 
       case LocalMusicAction.pause:
@@ -494,7 +609,7 @@ class LocalMusicService extends ChangeNotifier {
             arabic: 'سأشغل التالية: ${track.title}.',
           ),
           beforeReply: _player.playing ? pause : null,
-          afterReply: () => _playIndex(index),
+          afterReply: () => playTrack(track),
         );
 
       case LocalMusicAction.previous:
@@ -506,7 +621,7 @@ class LocalMusicService extends ChangeNotifier {
             arabic: 'سأشغل السابقة: ${track.title}.',
           ),
           beforeReply: _player.playing ? pause : null,
-          afterReply: () => _playIndex(index),
+          afterReply: () => playTrack(track),
         );
 
       case LocalMusicAction.status:
@@ -539,20 +654,28 @@ class LocalMusicService extends ChangeNotifier {
     if (playbackPath == null) {
       throw StateError('The local audio file for ${track.title} is missing.');
     }
+    if (_disposed) return;
     await _configureMusicSession();
+    if (_disposed) return;
     await _player.setFilePath(playbackPath);
+    if (_disposed) return;
     _currentIndex = index;
-    notifyListeners();
+    _notifyChanged();
     unawaited(_player.play().catchError((Object _) {}));
   }
 
-  Future<void> _stopAndRewind() async {
+  Future<void> _stopAndRewind() => _enqueue(() async {
+    _assistantPausedPath = null;
     await _player.pause();
     await _player.seek(Duration.zero);
-    notifyListeners();
-  }
+    _notifyChanged();
+  });
 
   Future<void> _configureMusicSession() async {
+    if (_configureSession != null) {
+      await _configureSession!();
+      return;
+    }
     final session = _audioSession ??= await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
     if (!await session.setActive(true)) {
@@ -564,7 +687,13 @@ class LocalMusicService extends ChangeNotifier {
     if (_autoAdvancing || _tracks.length < 2 || _currentIndex == null) return;
     _autoAdvancing = true;
     try {
-      await _playIndex(_nextIndex(1));
+      await _enqueue(() async {
+        if (!_player.playing ||
+            _player.processingState != ProcessingState.completed ||
+            _tracks.length < 2 || _currentIndex == null) return;
+        _assistantPausedPath = null;
+        await _playIndex(_nextIndex(1));
+      });
     } catch (_) {
       // Keep the player stopped if the next imported file was removed/corrupt.
     } finally {
@@ -633,14 +762,17 @@ class LocalMusicService extends ChangeNotifier {
 
   Future<void> _saveLibrary() async {
     final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(
+    final saved = await preferences.setString(
       _libraryPreferenceKey,
       jsonEncode(_tracks.map((track) => track.toJson()).toList()),
     );
+    if (!saved) throw StateError('Could not save the local music library.');
   }
 
   @override
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     unawaited(_playerSubscription?.cancel());
     unawaited(_player.dispose());
     super.dispose();

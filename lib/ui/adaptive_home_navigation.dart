@@ -1,4 +1,3 @@
-import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -99,24 +98,17 @@ class _AdaptiveHomeNavigationState extends State<AdaptiveHomeNavigation> {
       );
     }
     final scheme = Theme.of(context).colorScheme;
-    final opaque =
-        MediaQuery.highContrastOf(context) ||
-        MediaQuery.accessibleNavigationOf(context);
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : const Duration(milliseconds: 230);
+        : const Duration(milliseconds: 160);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(32),
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(
-            sigmaX: opaque ? 0 : 20,
-            sigmaY: opaque ? 0 : 20,
-          ),
-          child: Material(
-            color: scheme.surface.withValues(alpha: opaque ? 1 : .82),
-            shape: StadiumBorder(
+        borderRadius: BorderRadius.circular(24),
+        child: Material(
+            color: scheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
               side: BorderSide(color: scheme.outlineVariant),
             ),
             child: Padding(
@@ -177,7 +169,7 @@ class _AdaptiveHomeNavigationState extends State<AdaptiveHomeNavigation> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 12,
                                       fontWeight: FontWeight.w600,
                                       color: widget.index == i
                                           ? scheme.primary
@@ -194,7 +186,6 @@ class _AdaptiveHomeNavigationState extends State<AdaptiveHomeNavigation> {
                 ],
               ),
             ),
-          ),
         ),
       ),
     );

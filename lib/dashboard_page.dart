@@ -3,14 +3,12 @@ import 'ui/home_scenes.dart';
 import 'ui/smart_home_design.dart';
 import 'dart:convert';
 import 'dart:async';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
+import 'network/home_http.dart' as http;
 import 'package:shimmer/shimmer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:image_picker/image_picker.dart';
 import 'ble_service.dart';
 import 'auth_service.dart';
 import 'app_logger.dart';
@@ -18,13 +16,16 @@ import 'app_constants.dart';
 import 'assistant_identity.dart';
 import 'assistant_name_store.dart';
 import 'ellie/ellie_assistant_sheet.dart';
-import 'room_image_store.dart';
-import 'widgets/room_photo_card.dart';
+import 'widgets/room_card.dart';
+import 'network/foreground_poller.dart';
+import 'network/local_device_uri.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+export 'auth_service.dart' show userEsp32CodeProvider;
 
 // ────────────────────────────────────────────────────────────
 // 0. THEME MANAGEMENT
 // ────────────────────────────────────────────────────────────
-final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.dark);
+final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.system);
 
 // Nav index lives in a provider so theme changes don't reset it
 final selectedNavIndexProvider = StateProvider<int>((ref) => 0);
@@ -134,7 +135,6 @@ class _DT {
   static const amber = Color(0xFFFFB347);
   static const blue = HomeDesign.cyan;
   static const red = Color(0xFFFF5252);
-  static const espConnected = Color(0xFF4DFFA0);
 }
 
 // ────────────────────────────────────────────────────────────
@@ -204,8 +204,36 @@ class _CacheEntry {
 class ESP32DeviceService {
   final String esp32Ip;
   final BleService bleService;
+  final String? _ownerUid;
+  final String? _controllerCode;
+  bool _disposed = false;
 
-  ESP32DeviceService(this.esp32Ip, this.bleService);
+  ESP32DeviceService(this.esp32Ip, this.bleService, {String? ownerUid, String? controllerCode})
+      : _ownerUid = ownerUid ?? FirebaseAuth.instance.currentUser?.uid,
+        _controllerCode = controllerCode;
+
+  bool get _isCurrentAccount => !_disposed && _ownerUid != null &&
+      FirebaseAuth.instance.currentUser?.uid == _ownerUid;
+
+  void dispose() => _disposed = true;
+
+  String _accountUid() {
+    if (!_isCurrentAccount) throw StateError('The account changed. Please refresh.');
+    return _ownerUid!;
+  }
+
+  Future<bool> _matchesLocalController() async {
+    if (!_isCurrentAccount || !isLocalDeviceHost(esp32Ip) || _controllerCode == null) return false;
+    try {
+      final response = await http.get(Uri.parse('http://$esp32Ip/api/wifi/status'))
+          .timeout(AppConfig.localControlTimeout);
+      if (response.statusCode != 200 || !_isCurrentAccount) return false;
+      final status = jsonDecode(response.body);
+      return status is Map && status['uniqueCode'] == _controllerCode;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Map<String, dynamic>? _devicesFromBleCache() {
     if (!bleService.isConnected) return null;
@@ -216,7 +244,7 @@ class ESP32DeviceService {
   }
 
   Future<Map<String, dynamic>?> _tryGetDevicesFromBle() async {
-    if (!bleService.isConnected) return null;
+    if (!_isCurrentAccount || !bleService.isConnected) return null;
     try {
       await bleService.refreshDevices().timeout(AppConfig.mediumTimeout);
       return _devicesFromBleCache();
@@ -227,6 +255,7 @@ class ESP32DeviceService {
   }
 
   Future<Map<String, dynamic>?> _tryGetDevicesFromLocalHttp() async {
+    if (!_isCurrentAccount || !isLocalDeviceHost(esp32Ip)) return null;
     try {
       final response = await http
           .get(
@@ -245,32 +274,17 @@ class ESP32DeviceService {
     return null;
   }
 
-  // Read devices. When Bluetooth backup is connected, prefer the ESP32 local
-  // BLE device list so rooms/devices still appear when the phone has no internet.
-  Future<Map<String, dynamic>> getDevices() async {
-    // The ESP32 local API is the authoritative live state whenever it is
-    // reachable. A previously cached BLE list can be stale and was causing the
-    // dashboard to jump back to the old value after a successful toggle.
-    Map<String, dynamic>? fastResult = await _tryGetDevicesFromLocalHttp();
-    fastResult ??= await _tryGetDevicesFromBle();
-
-    final bleCached = _devicesFromBleCache();
-    if (fastResult == null &&
-        bleCached != null &&
-        (bleCached['devices'] as List).isNotEmpty) {
-      fastResult = bleCached;
-    }
-
+  Future<Map<String, dynamic>> _readCloudDevices() async {
     Map<String, dynamic> firebaseResult = {'devices': <Map<String, dynamic>>[]};
 
     try {
       final String databaseUrl = AppConfig.databaseUrl;
-      final user = FirebaseAuth.instance.currentUser;
+      final uid = _accountUid();
 
-      if (user != null) {
+      {
         final response = await http
             .get(
-              Uri.parse('$databaseUrl/smartHome/${user.uid}/devices.json'),
+              Uri.parse('$databaseUrl/smartHome/$uid/devices.json'),
               headers: {'Cache-Control': 'no-cache'},
             )
             .timeout(AppConfig.mediumTimeout);
@@ -296,6 +310,31 @@ class ESP32DeviceService {
       logDebug('Firebase device list unavailable: $e');
     }
 
+    return firebaseResult;
+  }
+
+  // Read devices. When Bluetooth backup is connected, prefer the ESP32 local
+  // BLE device list so rooms/devices still appear when the phone has no internet.
+  Future<Map<String, dynamic>> getDevices() async {
+    _accountUid();
+    // Cloud metadata and local live state are independent reads.
+    final cloudRead = _readCloudDevices();
+    // The ESP32 local API is the authoritative live state whenever it is
+    // reachable. A previously cached BLE list can be stale and was causing the
+    // dashboard to jump back to the old value after a successful toggle.
+    Map<String, dynamic>? fastResult = await _tryGetDevicesFromLocalHttp();
+    fastResult ??= await _tryGetDevicesFromBle();
+
+    final bleCached = _devicesFromBleCache();
+    if (fastResult == null &&
+        bleCached != null &&
+        (bleCached['devices'] as List).isNotEmpty) {
+      fastResult = bleCached;
+    }
+
+    final firebaseResult = await cloudRead;
+
+    _accountUid();
     if (fastResult == null) return firebaseResult;
 
     // Merge Firebase metadata with the fast ESP/BLE state. This keeps legacy
@@ -407,7 +446,7 @@ class ESP32DeviceService {
         return false;
       }
 
-      final String uid = FirebaseAuth.instance.currentUser!.uid;
+      final String uid = _accountUid();
       final String id = 'dev_${DateTime.now().millisecondsSinceEpoch}';
       final deviceData = <String, dynamic>{
         'id': id,
@@ -432,13 +471,14 @@ class ESP32DeviceService {
           )
           .timeout(AppConfig.mediumTimeout);
 
-      if (response.statusCode != 200) return false;
+      if (response.statusCode != 200 || !_isCurrentAccount) return false;
 
       // Apply the new device directly to the running ESP32. Previously the app
       // only wrote Firebase and depended on a later SSE/full sync, so the new
       // PCF8574 output sometimes did not exist locally until an ESP32 restart.
       bool appliedLocally = false;
       try {
+        if (!await _matchesLocalController()) throw StateError('The local controller could not be verified.');
         final localResponse = await http
             .post(
               Uri.parse('http://$esp32Ip/api/devices/add'),
@@ -460,7 +500,7 @@ class ESP32DeviceService {
 
       // Compatibility fallback for an ESP32 that has the sync endpoint but not
       // the new ID-aware add endpoint.
-      if (!appliedLocally) {
+      if (!appliedLocally && _isCurrentAccount && await _matchesLocalController()) {
         try {
           final syncResponse = await http
               .get(
@@ -477,7 +517,7 @@ class ESP32DeviceService {
 
       // BLE can ask the ESP32 to pull the newly-created Firebase device when the
       // phone is not on the same LAN.
-      if (!appliedLocally && bleService.isConnected) {
+      if (!appliedLocally && _isCurrentAccount && bleService.isConnected) {
         try {
           appliedLocally = await bleService.requestDeviceSync();
         } catch (e) {
@@ -485,7 +525,7 @@ class ESP32DeviceService {
         }
       }
 
-      if (bleService.isConnected) {
+      if (_isCurrentAccount && bleService.isConnected) {
         await Future.delayed(const Duration(milliseconds: 120));
         await bleService.refreshDevices().catchError((_) {});
       }
@@ -510,7 +550,7 @@ class ESP32DeviceService {
       );
       if (usedChannels.contains(newChannel)) return false;
 
-      final String uid = FirebaseAuth.instance.currentUser!.uid;
+      final String uid = _accountUid();
       final body = {
         'moduleId': moduleId,
         'expanderId': moduleId,
@@ -526,8 +566,9 @@ class ESP32DeviceService {
           )
           .timeout(AppConfig.mediumTimeout);
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 && _isCurrentAccount) {
         try {
+          if (!await _matchesLocalController()) throw StateError('The local controller could not be verified.');
           await http
               .post(
                 Uri.parse('http://$esp32Ip/api/devices/output'),
@@ -539,7 +580,7 @@ class ESP32DeviceService {
               )
               .timeout(AppConfig.shortTimeout);
         } catch (_) {
-          if (bleService.isConnected) {
+          if (_isCurrentAccount && bleService.isConnected) {
             await bleService
                 .editOutput(id, moduleId, newChannel)
                 .catchError((_) => false);
@@ -557,7 +598,9 @@ class ESP32DeviceService {
   // commands and let one path keep a stale cache, which made the UI bounce and
   // could replay old cloud state. Prefer local Wi-Fi, then BLE, then Firebase.
   Future<bool> controlDevice({required String id, required bool state}) async {
+    if (!_isCurrentAccount) return false;
     if (await _tryLocalControl(id: id, state: state)) return true;
+    if (!_isCurrentAccount) return false;
     if (bleService.isConnected && await _tryBleControl(id: id, state: state)) {
       return true;
     }
@@ -565,7 +608,7 @@ class ESP32DeviceService {
   }
 
   Future<bool> _tryBleControl({required String id, required bool state}) async {
-    if (!bleService.isConnected) return false;
+    if (!_isCurrentAccount || !bleService.isConnected) return false;
     try {
       return await bleService
           .controlDevice(id: id, state: state)
@@ -580,6 +623,7 @@ class ESP32DeviceService {
     required String id,
     required bool state,
   }) async {
+    if (!await _matchesLocalController()) return false;
     try {
       final localResponse = await http
           .post(
@@ -600,7 +644,7 @@ class ESP32DeviceService {
   }) async {
     try {
       final String databaseUrl = AppConfig.databaseUrl;
-      final String uid = FirebaseAuth.instance.currentUser!.uid;
+      final String uid = _accountUid();
 
       final response = await http
           .patch(
@@ -621,7 +665,7 @@ class ESP32DeviceService {
   Future<bool> removeDevice(String id) async {
     try {
       final String databaseUrl = AppConfig.databaseUrl;
-      final String uid = FirebaseAuth.instance.currentUser!.uid;
+      final String uid = _accountUid();
 
       final response = await http
           .delete(Uri.parse('$databaseUrl/smartHome/$uid/devices/$id.json'))
@@ -638,7 +682,7 @@ class ESP32DeviceService {
   Future<bool> saveRooms(List<String> rooms) async {
     try {
       final String databaseUrl = AppConfig.databaseUrl;
-      final String uid = FirebaseAuth.instance.currentUser!.uid;
+      final String uid = _accountUid();
 
       final response = await http
           .put(
@@ -661,7 +705,7 @@ class ESP32DeviceService {
   }) async {
     try {
       final String databaseUrl = AppConfig.databaseUrl;
-      final String uid = FirebaseAuth.instance.currentUser!.uid;
+      final String uid = _accountUid();
 
       final devicesResult = await getDevices();
       final devices = devicesResult['devices'] as List? ?? [];
@@ -703,7 +747,7 @@ class ESP32DeviceService {
   // Get rooms from Firebase. Important: do NOT invent default rooms.
   // When Bluetooth backup is connected, derive rooms from the ESP32 local device list.
   Future<List<String>> getRooms() async {
-    if (bleService.isConnected) {
+    if (_isCurrentAccount && bleService.isConnected) {
       final bleRoomsCached = _roomsFromDeviceList(bleService.devices);
       if (bleRoomsCached.isNotEmpty) return bleRoomsCached;
       try {
@@ -752,7 +796,7 @@ class ESP32DeviceService {
 
     try {
       final String databaseUrl = AppConfig.databaseUrl;
-      final String uid = FirebaseAuth.instance.currentUser!.uid;
+      final String uid = _accountUid();
 
       final response = await http
           .get(
@@ -879,7 +923,7 @@ class ESP32DeviceService {
             ),
           )
           .timeout(AppConfig.shortTimeout);
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 && _isCurrentAccount) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final available = data['available'] as List? ?? [];
         return available
@@ -899,7 +943,7 @@ class ESP32DeviceService {
           .get(Uri.parse('http://$esp32Ip/api/devicetypes'))
           .timeout(AppConfig.shortTimeout);
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 && _isCurrentAccount) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         return (data['types'] as List? ?? [])
             .map((e) => e as Map<String, dynamic>)
@@ -925,33 +969,6 @@ class ESP32DeviceService {
 // ────────────────────────────────────────────────────────────
 // 5. ESP32 IP PROVIDER
 // ────────────────────────────────────────────────────────────
-final userEsp32CodeProvider = FutureProvider<String?>((ref) async {
-  try {
-    final authService = await ref.watch(authServiceProvider.future);
-    final user = authService.currentUser;
-
-    if (user != null) {
-      final String databaseUrl = AppConfig.databaseUrl;
-      final response = await http
-          .get(
-            Uri.parse('$databaseUrl/users/${user.uid}/esp32Code.json'),
-            headers: {'Cache-Control': 'no-cache'},
-          )
-          .timeout(AppConfig.shortTimeout);
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data as String?;
-      }
-    }
-  } catch (e) {
-    // Phone may have no internet while Bluetooth backup is connected.
-    // Do not break the Settings page with a raw SocketException.
-    logDebug('ESP32 code lookup unavailable offline: $e');
-  }
-  return null;
-});
-
 final esp32IpProvider = FutureProvider<String>((ref) async {
   if (AppConfig.esp32IpOverride.isNotEmpty) {
     return AppConfig.esp32IpOverride;
@@ -962,15 +979,14 @@ final esp32IpProvider = FutureProvider<String>((ref) async {
     try {
       await bleService.readControllerStatus();
       final bleIp = bleService.controllerIp;
-      if (bleIp != null && bleIp.isNotEmpty) return bleIp;
+      if (bleIp != null && bleIp.isNotEmpty) return isLocalDeviceHost(bleIp) ? bleIp : AppConfig.fallbackEsp32Ip;
     } catch (e) {
       logDebug('ESP32 IP unavailable from BLE status: $e');
     }
   }
 
   final code = await ref.watch(userEsp32CodeProvider.future);
-  final authService = await ref.watch(authServiceProvider.future);
-  final user = authService.currentUser;
+  final user = await ref.watch(authUserProvider.future);
 
   if (code == null || code.isEmpty || user == null) {
     return AppConfig.fallbackEsp32Ip;
@@ -991,7 +1007,8 @@ final esp32IpProvider = FutureProvider<String>((ref) async {
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       if (data != null && data['ip'] != null) {
-        return data['ip'] as String;
+        final ip = data['ip']?.toString() ?? '';
+        if (isLocalDeviceHost(ip)) return ip;
       }
     }
   } catch (e) {
@@ -1009,7 +1026,8 @@ final esp32IpProvider = FutureProvider<String>((ref) async {
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       if (data != null && data['uniqueCode'] == code) {
-        return data['ip'] ?? AppConfig.fallbackEsp32Ip;
+        final ip = data['ip']?.toString() ?? '';
+        if (isLocalDeviceHost(ip)) return ip;
       }
     }
   } catch (e) {
@@ -1029,7 +1047,7 @@ Future<String> _resolveAssistantEsp32Ip(WidgetRef ref) async {
     try {
       await bleService.readControllerStatus();
       final bleIp = bleService.controllerIp;
-      if (bleIp != null && bleIp.isNotEmpty) return bleIp;
+      if (bleIp != null && bleIp.isNotEmpty) return isLocalDeviceHost(bleIp) ? bleIp : AppConfig.fallbackEsp32Ip;
     } catch (e) {
       logDebug('Assistant IP unavailable from BLE status: $e');
     }
@@ -1046,9 +1064,18 @@ Future<String> _resolveAssistantEsp32Ip(WidgetRef ref) async {
 final esp32DeviceServiceProvider = FutureProvider<ESP32DeviceService>((
   ref,
 ) async {
+  var disposed = false;
+  ESP32DeviceService? service;
+  ref.onDispose(() { disposed = true; service?.dispose(); });
+  final user = await ref.watch(authUserProvider.future);
+  if (disposed) throw StateError('The controller session changed.');
+  final code = await ref.watch(userEsp32CodeProvider.future);
+  if (disposed) throw StateError('The controller session changed.');
   final ip = await ref.watch(esp32IpProvider.future);
+  if (disposed) throw StateError('The controller session changed.');
   final bleService = ref.read(bleServiceProvider);
-  return ESP32DeviceService(ip, bleService);
+  service = ESP32DeviceService(ip, bleService, ownerUid: user?.uid, controllerCode: code);
+  return service;
 });
 
 // ────────────────────────────────────────────────────────────
@@ -1071,9 +1098,11 @@ int _asEpochSeconds(dynamic value) {
 }
 
 final httpDataProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  var disposed = false;
+  ref.onDispose(() => disposed = true);
   final url = ref.watch(databaseUrlProvider);
-  final authService = await ref.watch(authServiceProvider.future);
-  final user = authService.currentUser;
+  final user = await ref.watch(authUserProvider.future);
+  if (disposed) throw StateError('The dashboard session changed.');
   final cache = CacheService();
 
   final processedData = <String, dynamic>{
@@ -1123,6 +1152,9 @@ final httpDataProvider = FutureProvider<Map<String, dynamic>>((ref) async {
             jsonData['lights'] as Map,
           );
         }
+        if (jsonData['energy'] is Map) {
+          processedData['energy'] = Map<String, dynamic>.from(jsonData['energy'] as Map);
+        }
         if (jsonData['status'] is Map) {
           processedData['status'] = Map<String, dynamic>.from(
             jsonData['status'] as Map,
@@ -1132,6 +1164,10 @@ final httpDataProvider = FutureProvider<Map<String, dynamic>>((ref) async {
     }
   } catch (e) {
     logDebug('Firebase dashboard read unavailable: $e');
+  }
+
+  if (disposed || FirebaseAuth.instance.currentUser?.uid != user.uid) {
+    throw StateError('The dashboard session changed.');
   }
 
   final status = Map<String, dynamic>.from(
@@ -1171,6 +1207,9 @@ final httpDataProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   }
 
   processedData['status'] = status;
+  if (disposed || FirebaseAuth.instance.currentUser?.uid != user.uid) {
+    throw StateError('The dashboard session changed.');
+  }
   cache.set(cacheKey, processedData);
   return processedData;
 });
@@ -1178,111 +1217,66 @@ final httpDataProvider = FutureProvider<Map<String, dynamic>>((ref) async {
 // ────────────────────────────────────────────────────────────
 // 7. BLE + HTTP MERGED DATA PROVIDER
 // ────────────────────────────────────────────────────────────
-final smartHomeDataProvider = StreamProvider<Map<String, dynamic>>((ref) {
+final smartHomeDataProvider = StreamProvider.autoDispose<Map<String, dynamic>>((ref) {
+  final user = ref.watch(authUserProvider).asData?.value;
   final bleService = ref.watch(bleServiceProvider);
   final controller = StreamController<Map<String, dynamic>>();
-  late StreamSubscription bleStatusSub;
-  Timer? httpTimer;
-  final cache = CacheService();
-
-  final authService = ref.watch(authServiceProvider).requireValue;
-  final user = authService.currentUser;
-
-  Map<String, dynamic> currentData = {
+  var disposed = false;
+  var currentData = <String, dynamic>{
     'sensors': {'temperature': null, 'humidity': null, 'flame': false},
-    'lights': {},
+    'lights': <String, dynamic>{},
     'status': {'online': false},
   };
-
-  controller.add(Map.from(currentData));
-
+  void emit() {
+    if (!disposed && !controller.isClosed) controller.add(Map<String, dynamic>.from(currentData));
+  }
   void updateFromBle() {
+    if (!bleService.isConnected || disposed) return;
+    currentData = {
+      ...currentData,
+      'sensors': {'temperature': bleService.temperature, 'humidity': bleService.humidity, 'flame': bleService.flameDetected},
+      'lights': Map<String, bool>.from(bleService.lights),
+      'status': {...(currentData['status'] as Map? ?? {}), 'online': true, 'source': 'ble', 'ip': bleService.controllerIp ?? 'Bluetooth'},
+    };
+    emit();
+  }
+  void mergeHttp(Map<String, dynamic> data) {
+    if (disposed) return;
+    currentData = Map<String, dynamic>.from(data);
+    if (bleService.isConnected) { updateFromBle(); } else { emit(); }
+  }
+  // Manual invalidation also updates this stream, including while on other tabs.
+  ref.listen<AsyncValue<Map<String, dynamic>>>(httpDataProvider, (_, next) {
+    final data = next.asData?.value;
+    if (data != null) mergeHttp(data);
+  });
+  final poller = ForegroundPoller(interval: const Duration(seconds: 8), onPoll: () async {
+    if (disposed || user == null) return;
+    // A completed FutureProvider is cached indefinitely until invalidated.
+    // The poller's in-flight guard prevents overlapping network refreshes.
+    ref.invalidate(httpDataProvider);
+    final data = await ref.read(httpDataProvider.future);
+    if (!disposed) mergeHttp(data);
+  });
+  final subscription = bleService.statusStream.listen((status) {
+    if (disposed) return;
     if (bleService.isConnected) {
-      currentData['sensors'] = {
-        'temperature': bleService.temperature,
-        'humidity': bleService.humidity,
-        'flame': bleService.flameDetected,
-      };
-      currentData['lights'] = Map.from(bleService.lights);
-      final status = Map<String, dynamic>.from(
-        currentData['status'] as Map? ?? {},
-      );
-      status['online'] = true;
-      status['ip'] = status['ip'] ?? 'BLE';
-      status['ping'] = status['ping'] ?? 0;
-      currentData['status'] = status;
-      if (user != null) {
-        cache.set('bleData_${user.uid}', currentData);
-      }
-      if (!controller.isClosed) controller.add(Map.from(currentData));
-    }
-  }
-
-  Future<void> fetchHttpData() async {
-    try {
-      final httpData = await ref.read(httpDataProvider.future);
-      if (!bleService.isConnected) {
-        if (user != null) {
-          final cachedBle = cache.get('bleData_${user.uid}');
-          if (cachedBle != null) {
-            currentData = Map<String, dynamic>.from(cachedBle as Map);
-            currentData['status'] = httpData['status'] ?? currentData['status'];
-            if (!controller.isClosed) controller.add(Map.from(currentData));
-            return;
-          }
-        }
-        currentData = httpData;
-        if (!controller.isClosed) controller.add(Map.from(currentData));
-      } else if (httpData.containsKey('status')) {
-        final status = Map<String, dynamic>.from(
-          httpData['status'] as Map? ?? {},
-        );
-        status['online'] = true;
-        currentData['status'] = status;
-        if (!controller.isClosed) controller.add(Map.from(currentData));
-      }
-    } catch (e) {
-      if (!controller.isClosed && currentData.isNotEmpty) {
-        controller.add(Map.from(currentData));
-      }
-    }
-  }
-
-  if (user != null) {
-    final cachedData = cache.get('bleData_${user.uid}');
-    if (cachedData != null) {
-      currentData = Map<String, dynamic>.from(cachedData as Map);
-      Future.microtask(() {
-        if (!controller.isClosed) controller.add(Map.from(currentData));
-      });
-    }
-  }
-
-  bleStatusSub = bleService.statusStream.listen((status) {
-    if (status == BleStatus.connected || status == BleStatus.dataUpdated) {
       updateFromBle();
-    } else if (status == BleStatus.disconnected) {
-      ref.invalidate(httpDataProvider);
+    } else {
+      currentData['status'] = {...(currentData['status'] as Map? ?? {}), 'online': false, 'source': 'disconnected'};
+      emit();
+      unawaited(poller.refresh(queueIfBusy: true));
     }
   });
-
-  fetchHttpData();
-
-  httpTimer = Timer.periodic(
-    const Duration(seconds: 8),
-    (_) => fetchHttpData(),
-  );
-
-  // Do not auto-open the browser Bluetooth chooser.
-  // Bluetooth connection is now manual only, so cancelling the Web Bluetooth
-  // popup cannot create red errors or trigger tab-switch glitches.
-
+  emit();
+  updateFromBle();
+  poller.start();
   ref.onDispose(() {
-    bleStatusSub.cancel();
-    httpTimer?.cancel();
-    controller.close();
+    disposed = true;
+    poller.dispose();
+    unawaited(subscription.cancel());
+    unawaited(controller.close());
   });
-
   return controller.stream;
 });
 
@@ -1312,7 +1306,7 @@ class LightToggleService {
   Future<void> toggle(String room, bool value, BuildContext context) async {
     final bleService = _ref.read(bleServiceProvider);
     final url = _ref.read(databaseUrlProvider);
-    final authService = _ref.watch(authServiceProvider).requireValue;
+    final authService = await _ref.read(authServiceProvider.future);
     final user = authService.currentUser;
 
     if (user == null) {
@@ -1328,7 +1322,7 @@ class LightToggleService {
     _patchCache(cacheKey, room, value);
     _patchCache(bleCacheKey, room, value);
 
-    if (bleService.currentStatus == BleStatus.connected) {
+    if (bleService.isConnected) {
       try {
         await bleService.setLightState(room, value);
         return;
@@ -1400,26 +1394,13 @@ class DashboardPage extends ConsumerStatefulWidget {
 
 class _DashboardPageState extends ConsumerState<DashboardPage>
     with SingleTickerProviderStateMixin {
-  late final List<Widget> _pages;
+  final Map<int, Widget> _pages = {};
+  String? _accountUid;
 
   @override
   void initState() {
     super.initState();
-    _pages = const [
-      _HomeContentWrapper(),
-      _EnergyScreen(),
-      _AlertsScreen(),
-      _SettingsScreen(),
-    ];
-  }
-
-  Future<void> _manualRefresh() async {
-    final bleService = ref.read(bleServiceProvider);
-    if (bleService.isConnected) {
-      await bleService.refreshDevices().catchError((_) {});
-    }
-    ref.invalidate(httpDataProvider);
-    if (mounted) _showSnack(context, 'Refreshed ✓', color: _DT.green);
+    _accountUid = ref.read(authServiceProvider).asData?.value.currentUser?.uid;
   }
 
   void _showQuickActionDialog(BuildContext context) {
@@ -1441,7 +1422,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
       useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (context) => EllieAssistantSheet(
-        esp32BaseUri: Uri.parse('http://$esp32Ip'),
+        esp32BaseUri: Uri(scheme: 'http', host: esp32Ip.isEmpty ? 'unconfigured.invalid' : esp32Ip),
         assistantName: assistantName,
         bleService: ref.read(bleServiceProvider),
       ),
@@ -1451,7 +1432,27 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
   @override
   Widget build(BuildContext context) {
     final selectedIndex = ref.watch(selectedNavIndexProvider);
+    ref.listen(authUserProvider, (previous, next) {
+      final account = next.asData;
+      if (account == null) return;
+      final previousUid = _accountUid;
+      _accountUid = account.value?.uid;
+      if (previousUid != null && previousUid != _accountUid) {
+        CacheService().clear();
+        ref.read(appNotificationsProvider.notifier).clearAll();
+        unawaited(ref.read(bleServiceProvider).disconnect());
+        ref.read(selectedNavIndexProvider.notifier).state = 0;
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute<void>(
+            builder: (_) => account.value?.emailVerified == true ? const DashboardPage() : const LoginScreen(),
+          ), (_) => false);
+        }
+      }
+    });
     final isDesktop = ResponsiveHelper.isDesktop(context);
+    _pages.putIfAbsent(selectedIndex, () => switch (selectedIndex) {
+      1 => const _EnergyScreen(), 2 => const _AlertsScreen(), 3 => const _SettingsScreen(), _ => const _HomeContentWrapper(),
+    });
     final assistantName =
         ref.watch(assistantNameProvider).asData?.value ?? defaultAssistantName;
     final unread = ref
@@ -1476,7 +1477,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                       unawaited(_showEllieAssistant(assistantName)),
                 ),
               Expanded(
-                child: IndexedStack(index: selectedIndex, children: _pages),
+                child: IndexedStack(index: selectedIndex, children: List<Widget>.generate(4, (index) => TickerMode(enabled: index == selectedIndex, child: _pages[index] ?? const SizedBox.shrink()))),
               ),
             ],
           ),
@@ -2273,9 +2274,6 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
       if (!mounted) return;
 
       if (roomsSaved && devicesRenamed) {
-        await ref.read(roomImageStoreProvider).rename(oldRoom, newName);
-        ref.invalidate(roomImageProvider(oldRoom));
-        ref.invalidate(roomImageProvider(newName));
         widget.onRoomsUpdated(List<String>.from(_rooms));
         ref.read(dashboardRefreshTickProvider.notifier).state++;
         _showSnack(context, '✅ Room renamed', color: _DT.green);
@@ -2330,8 +2328,6 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
       final success = await _persistRooms(_rooms);
       if (!mounted) return;
       if (success) {
-        await ref.read(roomImageStoreProvider).remove(room);
-        ref.invalidate(roomImageProvider(room));
         _showSnack(context, '🗑️ Room removed: $room', color: _DT.amber);
       } else {
         setState(() => _rooms = previous);
@@ -2545,16 +2541,6 @@ class _RoomManagementDialogState extends ConsumerState<_RoomManagementDialog> {
 // 16. GLASS APP BAR
 // ────────────────────────────────────────────────────────────
 
-class _ABBtn extends StatelessWidget {
-  final Widget child;
-  final VoidCallback onTap;
-  const _ABBtn({required this.child, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) =>
-      GestureDetector(onTap: onTap, child: child);
-}
-
 class _DesktopSidebar extends StatelessWidget {
   final int selectedIndex;
   final String assistantName;
@@ -2663,7 +2649,7 @@ class _DesktopSidebar extends StatelessWidget {
                               const Text(
                                 'Voice assistant',
                                 style: TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 12,
                                   color: Colors.grey,
                                 ),
                               ),
@@ -2763,7 +2749,9 @@ class _HomeContentWrapperState extends ConsumerState<_HomeContentWrapper> {
     if (ble.isConnected) {
       await ble.refreshDevices().catchError((_) {});
     }
+    CacheService().clear();
     ref.invalidate(httpDataProvider);
+    await ref.read(httpDataProvider.future);
   }
 
   @override
@@ -2772,7 +2760,7 @@ class _HomeContentWrapperState extends ConsumerState<_HomeContentWrapper> {
     final bleService = ref.watch(bleServiceProvider);
     final refreshTick = ref.watch(dashboardRefreshTickProvider);
     return _HomeContent(
-      key: ValueKey(refreshTick),
+      key: ValueKey('${ref.watch(authUserProvider).asData?.value?.uid}_$refreshTick'),
       dataAsync: dataAsync,
       onRefresh: _refresh,
       bleStatus: bleService.currentStatus,
@@ -2800,6 +2788,11 @@ class _HomeContent extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<_HomeContent> createState() => _HomeContentState();
+}
+
+String _homeGreeting() {
+  final hour = DateTime.now().hour;
+  return hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 }
 
 class _HomeContentState extends ConsumerState<_HomeContent>
@@ -3010,12 +3003,14 @@ class _HomeContentState extends ConsumerState<_HomeContent>
   Future<void> _loadDashboardState() async {
     if (_dashboardRefreshInProgress || !mounted) return;
     _dashboardRefreshInProgress = true;
+    final accountUid = ref.read(authUserProvider).asData?.value?.uid;
     setState(() => _isLoadingDevices = true);
 
     try {
       final service = await ref.read(esp32DeviceServiceProvider.future);
-      final result = await service.getDevices();
-      final rooms = await service.getRooms();
+      final results = await Future.wait<Object>([service.getDevices(), service.getRooms()]);
+      final result = results[0] as Map<String, dynamic>;
+      final rooms = results[1] as List<String>;
       final devicesList = _applyPendingDeviceStates(
         result['devices'] as List? ?? [],
       );
@@ -3031,7 +3026,7 @@ class _HomeContentState extends ConsumerState<_HomeContent>
       final sortedRooms = visibleRooms.toList()
         ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
-      if (!mounted) return;
+      if (!mounted || accountUid != ref.read(authUserProvider).asData?.value?.uid) return;
       setState(() {
         _esp32Devices = {'devices': devicesList};
         _rooms = sortedRooms;
@@ -3041,7 +3036,7 @@ class _HomeContentState extends ConsumerState<_HomeContent>
       });
     } catch (e) {
       logDebug('Error loading ESP32 dashboard state: $e');
-      if (!mounted) return;
+      if (!mounted || accountUid != ref.read(authUserProvider).asData?.value?.uid) return;
 
       // Keep the last known dashboard state when cloud/http is unavailable.
       // If BLE is connected, use its device cache instead of clearing rooms.
@@ -3060,7 +3055,7 @@ class _HomeContentState extends ConsumerState<_HomeContent>
         }
       }
 
-      if (!mounted) return;
+      if (!mounted || accountUid != ref.read(authUserProvider).asData?.value?.uid) return;
       setState(() {
         if (bleDevices.isNotEmpty) {
           final visibleRooms = <String>{};
@@ -3082,18 +3077,20 @@ class _HomeContentState extends ConsumerState<_HomeContent>
   }
 
   Future<void> _loadDashboardStateSilently() async {
-    if (_dashboardRefreshInProgress || !mounted) return;
+    if (_dashboardRefreshInProgress || !mounted || ref.read(selectedNavIndexProvider) != 0) return;
     _dashboardRefreshInProgress = true;
     final revision = _deviceRevision;
+    final accountUid = ref.read(authUserProvider).asData?.value?.uid;
     try {
       if (_togglingDeviceIds.isNotEmpty) {
         return;
       }
 
       final service = await ref.read(esp32DeviceServiceProvider.future);
-      final result = await service.getDevices();
-      final rooms = await service.getRooms();
-      if (!mounted || revision != _deviceRevision) return;
+      final results = await Future.wait<Object>([service.getDevices(), service.getRooms()]);
+      final result = results[0] as Map<String, dynamic>;
+      final rooms = results[1] as List<String>;
+      if (!mounted || revision != _deviceRevision || accountUid != ref.read(authUserProvider).asData?.value?.uid) return;
       final mergedDevices = _applyPendingDeviceStates(
         result['devices'] as List? ?? [],
       );
@@ -3127,8 +3124,7 @@ class _HomeContentState extends ConsumerState<_HomeContent>
   }
 
   Future<void> _refreshDevices() async {
-    await _loadDashboardState();
-    await widget.onRefresh();
+    await Future.wait<void>([_loadDashboardState(), widget.onRefresh()]);
   }
 
   void _showDeviceOptions(
@@ -3342,28 +3338,7 @@ class _HomeContentState extends ConsumerState<_HomeContent>
 
       if (!mounted) return;
 
-      if (!success) {
-        _pendingDeviceStates.remove(id);
-        _pendingDeviceStateTimes.remove(id);
-        _togglingDeviceIds.remove(id);
-
-        final revertedDevices = List<dynamic>.from(
-          _esp32Devices['devices'] as List? ?? [],
-        );
-        final revertIndex = revertedDevices.indexWhere(
-          (d) => d is Map && d['id'] == id,
-        );
-        if (revertIndex != -1 && revertedDevices[revertIndex] is Map) {
-          final revertedDevice = Map<String, dynamic>.from(
-            revertedDevices[revertIndex] as Map,
-          );
-          revertedDevice['state'] = previousState;
-          revertedDevices[revertIndex] = revertedDevice;
-          setState(() => _esp32Devices = {'devices': revertedDevices});
-        }
-        _showSnack(context, '❌ Failed to control device', color: _DT.red);
-        return;
-      }
+      if (!success) throw StateError('Could not send the device command.');
 
       final deviceName = index != -1 && devices[index] is Map
           ? ((devices[index] as Map)['name']?.toString() ?? 'Device')
@@ -3372,9 +3347,9 @@ class _HomeContentState extends ConsumerState<_HomeContent>
           .read(appNotificationsProvider.notifier)
           .push(
             key: 'device_${id}_state',
-            title: '$deviceName ${state ? 'turned on' : 'turned off'}',
+            title: '$deviceName: ${state ? 'on' : 'off'} requested',
             message:
-                'PCF8574 channel command was accepted by the active control path.',
+                'Request sent. The device state will update after confirmation.',
             icon: state ? Icons.power_rounded : Icons.power_off_rounded,
             color: state ? _DT.green : Colors.grey,
             suppressFor: const Duration(seconds: 2),
@@ -3384,7 +3359,7 @@ class _HomeContentState extends ConsumerState<_HomeContent>
       // state until a fresh ESP32 read confirms it. Removing the pending state
       // after only 350 ms allowed an older BLE/Firebase value to flash back ON.
       setState(() => _togglingDeviceIds.remove(id));
-      Future.delayed(const Duration(milliseconds: 180), () {
+      Future.delayed(const Duration(milliseconds: 120), () {
         if (!mounted) return;
         unawaited(_loadDashboardStateSilently());
       });
@@ -3408,7 +3383,8 @@ class _HomeContentState extends ConsumerState<_HomeContent>
         revertedDevices[revertIndex] = revertedDevice;
         setState(() => _esp32Devices = {'devices': revertedDevices});
       }
-      _showSnack(context, '❌ Error: ${e.toString()}', color: _DT.red);
+      _showSnack(context, 'Could not control this device. Check its connection.', color: _DT.red);
+      rethrow;
     }
   }
 
@@ -3431,6 +3407,9 @@ class _HomeContentState extends ConsumerState<_HomeContent>
   Widget build(BuildContext context) {
     final padding = ResponsiveHelper.getPadding(context);
     final isDesktop = ResponsiveHelper.isDesktop(context);
+    ref.listen(selectedNavIndexProvider, (_, next) {
+      if (next == 0) unawaited(_loadDashboardStateSilently());
+    });
 
     if (!_initialLoadDone) {
       return const _SkeletonLoader();
@@ -3447,7 +3426,7 @@ class _HomeContentState extends ConsumerState<_HomeContent>
           final hum = (sensors['humidity'] as num?)?.toDouble();
           final flame = sensors['flame'] == true;
           final status = (data['status'] as Map?) ?? {};
-          final online = status['online'] ?? false;
+          final online = status['online'] == true;
           final ip = status['ip']?.toString();
           final ping = (status['ping'] as num?)?.toInt();
           final rssi = (status['rssi'] as num?)?.toInt();
@@ -3478,19 +3457,16 @@ class _HomeContentState extends ConsumerState<_HomeContent>
               top: 12,
               left: isDesktop ? padding : 14,
               right: isDesktop ? padding : 14,
-              bottom: 8 + MediaQuery.paddingOf(context).bottom,
+              bottom: (isDesktop ? 24 : 180) + MediaQuery.paddingOf(context).bottom,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 HomeHero(
-                  title: DateTime.now().hour < 12
-                      ? 'Good Morning'
-                      : DateTime.now().hour < 18 ? 'Good Afternoon' : 'Good Evening',
-                  height: 156,
-                  topLabel: 'My Home',
-                  topDetail: '${rooms.length} rooms · ${devicesList.where((d) => d is Map && d['state'] == true).length} devices on',
-                  subtitle: flame ? 'Check your home safety alert.' : 'Your home, at a glance.',
+                  title: _homeGreeting(),
+                  height: 140,
+                  compact: true,
+                  subtitle: 'Your home at a glance.',
                   trailing: IconButton.filledTonal(
                     tooltip: 'Settings',
                     onPressed: () =>
@@ -3532,8 +3508,6 @@ class _HomeContentState extends ConsumerState<_HomeContent>
                   onRoomSelected: (r) => setState(() => _selectedRoom = r),
                   rooms: rooms,
                   devices: devicesList,
-                  temperature: temp,
-                  humidity: hum,
                 ),
                 const SizedBox(height: 8),
                 if (_isLoadingDevices)
@@ -3585,8 +3559,6 @@ class _HomeContentState extends ConsumerState<_HomeContent>
                 else
                   _FocusedRoomPanel(
                     room: selectedRoom,
-                    temperature: temp,
-                    humidity: hum,
                     devices: roomDevices,
                     onToggle: _controlDevice,
                     onOptions: _showDeviceOptions,
@@ -3644,14 +3616,7 @@ class _HomeContentState extends ConsumerState<_HomeContent>
 // 19. DYNAMIC DEVICE CARD
 // ────────────────────────────────────────────────────────────
 class _EspBar extends StatelessWidget {
-  const _EspBar({
-    required this.online,
-    required this.ip,
-    required this.ping,
-    required this.rssi,
-    required this.bleStatus,
-    required this.onConnectBLE,
-  });
+  const _EspBar({required this.online, required this.ip, required this.ping, required this.rssi, required this.bleStatus, required this.onConnectBLE});
   final bool online;
   final String? ip;
   final int? ping, rssi;
@@ -3659,186 +3624,67 @@ class _EspBar extends StatelessWidget {
   final VoidCallback onConnectBLE;
   @override
   Widget build(BuildContext context) {
-    final connected =
-        bleStatus == BleStatus.connected || bleStatus == BleStatus.dataUpdated;
-    final busy =
-        bleStatus == BleStatus.scanning || bleStatus == BleStatus.connecting;
-    return HomeCard(
-      padding: const EdgeInsets.all(9),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const HomeGlowIcon(
-                Icons.wifi,
-                color: Color(0xFF21E4D3),
-                size: 32,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      online ? 'System Connected' : 'System Offline',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    const SizedBox(height: 3),
-                    const Text(
-                      'Wi-Fi / Firebase with BLE backup',
-                      style: TextStyle(fontSize: 9, color: Color(0xFFA7B9D7)),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                constraints: const BoxConstraints(minWidth: 30, minHeight: 32),
-                padding: EdgeInsets.zero,
-                tooltip: connected ? 'BLE connected' : 'Connect BLE',
-                onPressed: connected || busy ? null : onConnectBLE,
-                icon: const Icon(Icons.chevron_right, size: 18),
-              ),
-            ],
-          ),
+    final connected = bleStatus == BleStatus.connected || bleStatus == BleStatus.dataUpdated;
+    final busy = bleStatus == BleStatus.scanning || bleStatus == BleStatus.connecting;
+    final scheme = Theme.of(context).colorScheme;
+    return HomeCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        HomeGlowIcon(online ? Icons.wifi_rounded : Icons.wifi_off_rounded, color: online ? scheme.primary : scheme.onSurfaceVariant, size: 42),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(online ? 'Controller online' : 'Controller offline', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           const SizedBox(height: 5),
-          Wrap(
-            spacing: 5,
-            runSpacing: 5,
-            children: [
-              for (final t in [
-                online ? '● ESP online' : '● ESP offline',
-                connected ? '● BLE connected' : 'BLE offline',
-                ip ?? 'IP —',
-                rssi == null ? '— dBm' : '$rssi dBm',
-                ping == null ? '— ms' : '$ping ms',
-              ])
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF141E2F),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: HomeDesign.border),
-                  ),
-                  child: Text(
-                    t,
-                    style: const TextStyle(
-                      fontSize: 8,
-                      color: Color(0xFFDCE5F7),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
+          Text(connected ? 'Bluetooth backup connected' : 'Connect locally for offline control.', style: TextStyle(fontSize: 13, height: 1.4, color: scheme.onSurfaceVariant)),
+        ])),
+        const SizedBox(width: 8),
+        IconButton.filledTonal(tooltip: connected ? 'Bluetooth connected' : busy ? 'Connecting Bluetooth' : 'Connect BLE', onPressed: connected || busy ? null : onConnectBLE,
+          icon: busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(connected ? Icons.bluetooth_connected_rounded : Icons.bluetooth_rounded)),
+      ]),
+      if (ip != null || rssi != null || ping != null) ...[
+        const SizedBox(height: 14),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final label in [if (ip != null && ip!.isNotEmpty) ip!, if (rssi != null) '$rssi dBm', if (ping != null) '$ping ms'])
+            Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: scheme.onSurface.withValues(alpha: .04), borderRadius: BorderRadius.circular(10)),
+              child: Text(label, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant))),
+        ]),
+      ],
+    ]));
   }
 }
 
-// ────────────────────────────────────────────────────────────
-// 21. STATS ROW
-// ────────────────────────────────────────────────────────────
 class _StatsRow extends StatelessWidget {
-  final double? temp;
-  final double? hum;
-  final double? todayKw;
-
-  const _StatsRow({
-    required this.temp,
-    required this.hum,
-    required this.todayKw,
-  });
-
+  const _StatsRow({required this.temp, required this.hum, required this.todayKw});
+  final double? temp, hum, todayKw;
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _StatTile(
-            icon: Icons.thermostat_rounded,
-            iconColor: const Color(0xFFFF6B6B),
-            value: temp == null ? '—' : '${temp!.toStringAsFixed(1)}°',
-            label: 'Temperature',
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _StatTile(
-            icon: Icons.water_drop_rounded,
-            iconColor: _DT.blue,
-            value: hum == null ? '—' : '${hum!.toStringAsFixed(0)}%',
-            label: 'Humidity',
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _StatTile(
-            icon: Icons.bolt_rounded,
-            iconColor: _DT.amber,
-            value: todayKw == null ? '—' : '${todayKw!.toStringAsFixed(1)} kWh',
-            label: 'Today’s Energy',
-          ),
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, constraints) {
+    final items = [
+      (Icons.thermostat_outlined, 'Temperature', temp == null ? '—' : '${temp!.toStringAsFixed(1)}°'),
+      (Icons.water_drop_outlined, 'Humidity', hum == null ? '—' : '${hum!.toStringAsFixed(0)}%'),
+      if (todayKw != null) (Icons.bolt_outlined, 'Today’s energy', '${todayKw!.toStringAsFixed(1)} kWh'),
+    ];
+    final columns = constraints.maxWidth < 280 || MediaQuery.textScalerOf(context).scale(1) > 1.5 ? 1 : constraints.maxWidth > 620 ? items.length : 2;
+    final width = (constraints.maxWidth - 12 * (columns - 1)) / columns;
+    return Wrap(spacing: 12, runSpacing: 12, children: [
+      for (final item in items) SizedBox(width: width, child: _StatTile(icon: item.$1, iconColor: Theme.of(context).colorScheme.primary, label: item.$2, value: item.$3)),
+    ]);
+  });
 }
 
 class _StatTile extends StatelessWidget {
-  const _StatTile({
-    required this.icon,
-    required this.iconColor,
-    required this.value,
-    required this.label,
-  });
+  const _StatTile({required this.icon, required this.iconColor, required this.value, required this.label});
   final IconData icon;
   final Color iconColor;
   final String value, label;
   @override
-  Widget build(BuildContext context) {
-    final text = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 8,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-        ),
-      ],
-    );
-    return HomeCard(
-      padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 7),
-      child: MediaQuery.textScalerOf(context).scale(1) > 1.3
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: iconColor, size: 20),
-                const SizedBox(height: 6),
-                text,
-              ],
-            )
-          : Row(
-              children: [
-                Icon(icon, color: iconColor, size: 19),
-                const SizedBox(width: 7),
-                Expanded(child: text),
-              ],
-            ),
-    );
-  }
+  Widget build(BuildContext context) => HomeCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Icon(icon, color: iconColor, size: 24),
+    const SizedBox(height: 14),
+    Text(value, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -.5)),
+    const SizedBox(height: 6),
+    Text(label, style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+  ]));
 }
+
 
 class _FlameBanner extends StatelessWidget {
   final bool flame;
@@ -3913,7 +3759,6 @@ class _FlameBanner extends StatelessWidget {
 // ────────────────────────────────────────────────────────────
 // 23. ROOMS HEADER + TABS (UPDATED WITH DYNAMIC ROOMS)
 // ────────────────────────────────────────────────────────────
-const String _roomArtAsset = 'assets/images/smart_room_ambient.png';
 
 IconData _roomIconFor(String roomName) {
   final name = roomName.toLowerCase();
@@ -3937,517 +3782,130 @@ IconData _roomIconFor(String roomName) {
   return Icons.meeting_room_rounded;
 }
 
-Color _roomAccentFor(String roomName) {
-  const accents = <Color>[
-    Color(0xFF8B5CFF),
-    Color(0xFF4E8CFF),
-    Color(0xFFFF8F6B),
-    Color(0xFF4FD4B1),
-    Color(0xFFE26FAE),
-  ];
-  final hash = roomName.codeUnits.fold<int>(0, (sum, value) => sum + value);
-  return accents[hash % accents.length];
-}
-
-Alignment _roomArtAlignment(String roomName) {
-  const alignments = <Alignment>[
-    Alignment.centerLeft,
-    Alignment.center,
-    Alignment.centerRight,
-    Alignment(-0.45, 0),
-    Alignment(0.45, 0),
-  ];
-  final hash = roomName.codeUnits.fold<int>(0, (sum, value) => sum + value);
-  return alignments[hash % alignments.length];
-}
-
-class _RoomGallery extends ConsumerWidget {
-  final double? temperature, humidity;
+class _RoomGallery extends StatelessWidget {
+  const _RoomGallery({required this.selectedRoom, required this.onRoomSelected, required this.rooms, required this.devices});
   final String selectedRoom;
   final ValueChanged<String> onRoomSelected;
   final List<String> rooms;
   final List<dynamic> devices;
 
-  const _RoomGallery({
-    this.temperature,
-    this.humidity,
-    required this.selectedRoom,
-    required this.onRoomSelected,
-    required this.rooms,
-    required this.devices,
-  });
-
-  Future<void> _manageRooms(BuildContext context) async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) =>
-          _RoomManagementDialog(rooms: rooms, onRoomsUpdated: (_) {}),
-    );
-  }
-
-  Future<void> _addDevice(BuildContext context) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: false,
-      backgroundColor: Colors.transparent,
-      builder: (context) => const _QuickActionDialog(),
-    );
-  }
-
-  Future<void> _changeRoomPhoto(
-    BuildContext context,
-    WidgetRef ref,
-    String room,
-  ) async {
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _GCard(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 42,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Change $room photo',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ListTile(
-                leading: const Icon(Icons.photo_library_rounded),
-                title: const Text('Choose from photos'),
-                onTap: () => Navigator.pop(context, 'gallery'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.camera_alt_rounded),
-                title: const Text('Take a photo'),
-                onTap: () => Navigator.pop(context, 'camera'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.restore_rounded),
-                title: const Text('Use default photo'),
-                onTap: () => Navigator.pop(context, 'remove'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (action == null) return;
-
-    final store = ref.read(roomImageStoreProvider);
-    if (action == 'remove') {
-      await store.remove(room);
-      ref.invalidate(roomImageProvider(room));
-      return;
-    }
-
-    final source = action == 'camera'
-        ? ImageSource.camera
-        : ImageSource.gallery;
-    try {
-      final picked = await ImagePicker().pickImage(
-        source: source,
-        maxWidth: 1600,
-        maxHeight: 1200,
-        imageQuality: 84,
-      );
-      if (picked == null) return;
-      final bytes = await picked.readAsBytes();
-      if (bytes.lengthInBytes > 2500000) {
-        if (context.mounted) {
-          _showSnack(
-            context,
-            'Choose a photo smaller than 2.5 MB',
-            color: _DT.amber,
-          );
-        }
-        return;
-      }
-      await store.save(room, bytes);
-      ref.invalidate(roomImageProvider(room));
-      if (context.mounted) {
-        _showSnack(context, 'Room photo updated', color: _DT.green);
-      }
-    } catch (_) {
-      if (context.mounted) {
-        _showSnack(context, 'Could not open that photo', color: _DT.red);
-      }
-    }
-  }
+  Future<void> _manageRooms(BuildContext context) => showDialog<void>(
+    context: context, builder: (_) => _RoomManagementDialog(rooms: rooms, onRoomsUpdated: (_) {}));
+  Future<void> _addDevice(BuildContext context) => showModalBottomSheet<void>(
+    context: context, isScrollControlled: true, useSafeArea: true,
+    backgroundColor: Colors.transparent, builder: (_) => const _QuickActionDialog());
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.3;
-            final heading = const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Your Rooms',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                ),
-                SizedBox(height: 3),
-                Text(
-                  'Choose a room to see only its controls',
-                  style: TextStyle(fontSize: 9, color: Color(0xFFA8B9D4)),
-                ),
-              ],
-            );
-            final actions = Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                Tooltip(
-                  message: 'Add or manage rooms',
-                  child: OutlinedButton.icon(
-                    onPressed: () => unawaited(_manageRooms(context)),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(48, 44),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 9,
-                      ),
-                      textStyle: Theme.of(
-                        context,
-                      ).textTheme.labelLarge?.copyWith(fontSize: 12),
-                    ),
-                    icon: const Icon(Icons.grid_view, size: 17),
-                    label: const Text('Manage Rooms'),
-                  ),
-                ),
-                Tooltip(
-                  message: 'Add device',
-                  child: OutlinedButton.icon(
-                    onPressed: () => unawaited(_addDevice(context)),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(48, 44),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 9,
-                      ),
-                      textStyle: Theme.of(
-                        context,
-                      ).textTheme.labelLarge?.copyWith(fontSize: 12),
-                    ),
-                    icon: const Icon(Icons.add, size: 17),
-                    label: const Text('Add Device'),
-                  ),
-                ),
-              ],
-            );
-            if (largeText || constraints.maxWidth < 560) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [heading, const SizedBox(height: 8), actions],
-              );
-            }
-            return Row(
-              children: [
-                Expanded(child: heading),
-                const SizedBox(width: 8),
-                actions,
-              ],
-            );
-          },
-        ),
-        if (rooms.isNotEmpty) ...[
-          const SizedBox(height: 9),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final scale = MediaQuery.textScalerOf(
-                context,
-              ).scale(1).clamp(1.0, 2.0);
-              final columns = constraints.maxWidth < 280 || scale > 1.3
-                  ? 1
-                  : constraints.maxWidth >= 900
-                  ? 4
-                  : constraints.maxWidth >= 650
-                  ? 3
-                  : 2;
-              final cardWidth =
-                  (constraints.maxWidth - 9 * (columns - 1)) / columns;
-              return Wrap(
-                spacing: 9,
-                runSpacing: 9,
-                children: [
-                  for (final room in rooms)
-                    SizedBox(
-                      width: cardWidth,
-                      height: 168 + (scale - 1) * 112,
-                      child: RoomPhotoCard(
-                        room: room,
-                        temperature: temperature,
-                        humidity: humidity,
-                        deviceCount: devices
-                            .where((d) => d is Map && d['room'] == room)
-                            .length,
-                        activeCount: devices
-                            .where(
-                              (d) =>
-                                  d is Map &&
-                                  d['room'] == room &&
-                                  d['state'] == true,
-                            )
-                            .length,
-                        selected: room == selectedRoom,
-                        imageBytes: ref
-                            .watch(roomImageProvider(room))
-                            .asData
-                            ?.value,
-                        imageAlignment: _roomArtAlignment(room),
-                        icon: _roomIconFor(room),
-                        onChangeImage: () =>
-                            unawaited(_changeRoomPhoto(context, ref, room)),
-                        onTap: () {
-                          HapticFeedback.selectionClick();
-                          onRoomSelected(room);
-                        },
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-        ],
+  Widget build(BuildContext context) {
+    final counts = <String, int>{};
+    final active = <String, int>{};
+    for (final device in devices.whereType<Map>()) {
+      final room = device['room']?.toString() ?? '';
+      counts[room] = (counts[room] ?? 0) + 1;
+      if (device['state'] == true) active[room] = (active[room] ?? 0) + 1;
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const HomeSection('Your Rooms'),
+      Wrap(spacing: 10, runSpacing: 8, children: [
+        OutlinedButton.icon(onPressed: () => unawaited(_manageRooms(context)), icon: const Icon(Icons.grid_view_rounded, size: 18), label: const Text('Manage Rooms')),
+        FilledButton.tonalIcon(onPressed: () => unawaited(_addDevice(context)), icon: const Icon(Icons.add_rounded, size: 18), label: const Text('Add Device')),
+      ]),
+      if (rooms.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        LayoutBuilder(builder: (context, constraints) {
+          final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
+          final columns = constraints.maxWidth < 320 || scale > 1.3 ? 1 : constraints.maxWidth >= 900 ? 4 : constraints.maxWidth >= 650 ? 3 : 2;
+          final width = (constraints.maxWidth - 12 * (columns - 1)) / columns;
+          return Wrap(spacing: 12, runSpacing: 12, children: [
+            for (final room in rooms)
+              SizedBox(width: width, height: 186 + (scale - 1) * 100,
+                child: RoomCard(room: room, deviceCount: counts[room] ?? 0,
+                  activeCount: active[room] ?? 0, selected: room == selectedRoom,
+                  icon: _roomIconFor(room), onTap: () {
+                    HapticFeedback.selectionClick(); onRoomSelected(room);
+                  })),
+          ]);
+        }),
       ],
-    );
+    ]);
   }
 }
 
-class _FocusedRoomPanel extends ConsumerWidget {
-  final double? temperature, humidity;
+class _FocusedRoomPanel extends StatelessWidget {
+  const _FocusedRoomPanel({required this.room, required this.pendingIds, required this.devices, required this.onToggle, required this.onOptions, required this.onSetAll});
   final String room;
   final Set<String> pendingIds;
   final List<dynamic> devices;
-  final Future<void> Function(String id, bool state) onToggle;
-  final void Function(String id, String name, String moduleId, int channel)
-  onOptions;
-  final Future<void> Function(bool state) onSetAll;
-
-  const _FocusedRoomPanel({
-    this.temperature,
-    this.humidity,
-    required this.room,
-    required this.pendingIds,
-    required this.devices,
-    required this.onToggle,
-    required this.onOptions,
-    required this.onSetAll,
-  });
+  final Future<void> Function(String, bool) onToggle;
+  final void Function(String, String, String, int) onOptions;
+  final Future<void> Function(bool) onSetAll;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => HomeCard(
-    padding: const EdgeInsets.all(8),
-    child: Column(
-      children: [
-        Row(
-          children: [
-            HomeGlowIcon(_roomIconFor(room), size: 28),
-            const SizedBox(width: 7),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$room controls',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  RoomClimate(temperature: temperature, humidity: humidity),
-                  const SizedBox(height: 5),
-                  Text(
-                    '${devices.where((d) => d is Map && d['state'] == true).length} devices active',
-                    style: const TextStyle(
-                      fontSize: 9,
-                      color: Color(0xFF9EAFCC),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            PopupMenuButton<bool>(
-              tooltip: 'Room actions',
-              onSelected: (v) => unawaited(onSetAll(v)),
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: true, child: Text('All on')),
-                PopupMenuItem(value: false, child: Text('All off')),
-              ],
-              child: const Padding(
-                padding: EdgeInsets.all(7),
-                child: Text(
-                  'View All ›',
-                  style: TextStyle(fontSize: 9, color: Color(0xFFA3B4D4)),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        if (devices.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text('No devices in this room yet'),
-          )
-        else
-          LayoutBuilder(
-            builder: (context, c) {
-              final count = MediaQuery.textScalerOf(context).scale(1) > 1.3
-                  ? 2
-                  : 4;
-              return Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final d in devices.whereType<Map>())
-                    SizedBox(
-                      width: (c.maxWidth - 6 * (count - 1)) / count,
-                      child: _RoomDeviceRow(
-                        device: Map<String, dynamic>.from(d),
-                        pending: pendingIds.contains(d['id']?.toString()),
-                        onToggle: onToggle,
-                        onOptions: onOptions,
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    HomeSection('$room controls', trailing: PopupMenuButton<bool>(
+      tooltip: 'Room actions',
+      onSelected: (state) => unawaited(onSetAll(state).catchError((Object _) {})),
+      itemBuilder: (_) => const [PopupMenuItem(value: true, child: Text('All on')), PopupMenuItem(value: false, child: Text('All off'))],
+    )),
+    if (devices.isEmpty)
+      const HomeCard(child: Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Text('No devices in this room yet. Add a device to get started.')))
+    else
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth < 320 || MediaQuery.textScalerOf(context).scale(1) > 1.3 ? 1 : constraints.maxWidth >= 850 ? 4 : constraints.maxWidth >= 620 ? 3 : 2;
+        final width = (constraints.maxWidth - 12 * (columns - 1)) / columns;
+        return Wrap(spacing: 12, runSpacing: 12, children: [
+          for (final device in devices.whereType<Map>())
+            SizedBox(width: width, child: _RoomDeviceRow(device: Map<String, dynamic>.from(device),
+              pending: pendingIds.contains(device['id']?.toString()), onToggle: onToggle, onOptions: onOptions)),
+        ]);
+      }),
+  ]);
 }
 
 class _RoomDeviceRow extends StatelessWidget {
+  const _RoomDeviceRow({required this.device, this.pending = false, required this.onToggle, required this.onOptions});
   final Map<String, dynamic> device;
   final bool pending;
-  final Future<void> Function(String id, bool state) onToggle;
-  final void Function(String id, String name, String moduleId, int channel)
-  onOptions;
-
-  const _RoomDeviceRow({
-    required this.device,
-    this.pending = false,
-    required this.onToggle,
-    required this.onOptions,
-  });
-
-  IconData _iconFor(int type) {
-    switch (type) {
-      case 0:
-        return Icons.lightbulb_rounded;
-      case 1:
-        return Icons.air_rounded;
-      case 2:
-        return Icons.power_settings_new_rounded;
-      case 3:
-        return Icons.electrical_services_rounded;
-      default:
-        return Icons.devices_rounded;
-    }
-  }
-
+  final Future<void> Function(String, bool) onToggle;
+  final void Function(String, String, String, int) onOptions;
+  IconData _iconFor(int type) => switch (type) {
+    0 => Icons.lightbulb_outline_rounded, 1 => Icons.air_rounded,
+    2 => Icons.power_settings_new_rounded, 3 => Icons.electrical_services_rounded,
+    _ => Icons.devices_rounded,
+  };
   @override
   Widget build(BuildContext context) {
     final name = device['name']?.toString() ?? 'Device';
     final id = device['id']?.toString() ?? '';
     final type = device['type'] is num ? (device['type'] as num).toInt() : 0;
-    final state = device['state'] as bool? ?? false;
-    final moduleId = (device['moduleId'] ?? device['expanderId'] ?? 'io_1')
-        .toString();
-    final rawChannel = device['channel'];
-    final channel = rawChannel is num
-        ? rawChannel.toInt()
-        : int.tryParse(rawChannel?.toString() ?? '') ?? -1;
-    final color = state ? _DT.amber : Colors.grey;
-
-    void showOptions() {
-      if (id.isNotEmpty) onOptions(id, name, moduleId, channel);
-    }
-
+    final enabled = device['enabled'] != false;
+    final state = device['state'] == true;
+    final scheme = Theme.of(context).colorScheme;
+    final moduleId = (device['moduleId'] ?? device['expanderId'] ?? 'io_1').toString();
+    final channel = device['channel'] is num ? (device['channel'] as num).toInt() : int.tryParse(device['channel']?.toString() ?? '') ?? -1;
+    final color = state ? scheme.primary : scheme.onSurfaceVariant;
     return HomeCard(
-      padding: const EdgeInsets.all(6),
-      child: InkWell(
-        onLongPress: showOptions,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              _iconFor(type),
-              size: 25,
-              color: color,
-              shadows: [Shadow(color: color, blurRadius: 12)],
-            ),
-            const SizedBox(height: 5),
-            Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 9),
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    pending
-                        ? '…'
-                        : state
-                        ? 'On'
-                        : 'Off',
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: state
-                          ? const Color(0xFF36D799)
-                          : const Color(0xFFA5B4D0),
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  width: 30,
-                  height: 24,
-                  child: FittedBox(
-                    child: Switch(
-                      value: state,
-                      onChanged: pending || id.isEmpty
-                          ? null
-                          : (v) => unawaited(onToggle(id, v)),
-                      activeTrackColor: const Color(0xFF26CD75),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+      padding: const EdgeInsets.all(14), glowColor: state ? scheme.primary : null,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          HomeGlowIcon(_iconFor(type), color: color, size: 40),
+          const Spacer(),
+          IconButton(tooltip: 'Manage $name', onPressed: pending || id.isEmpty ? null : () => onOptions(id, name, moduleId, channel), icon: const Icon(Icons.more_horiz_rounded)),
+        ]),
+        const SizedBox(height: 12),
+        Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: Text(!enabled ? 'Disabled' : pending ? 'Sending…' : state ? 'On' : 'Off', style: TextStyle(color: color, fontSize: 13))),
+          Semantics(label: name, enabled: enabled && !pending,
+            child: Switch(value: state, onChanged: pending || id.isEmpty || !enabled ? null : (value) => unawaited(onToggle(id, value).catchError((Object _) {})))),
+        ]),
+      ]),
     );
   }
 }
 
-// ────────────────────────────────────────────────────────────
-// 24. OPTION TILE
-// ────────────────────────────────────────────────────────────
+
 class _OptionTile extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -4557,7 +4015,6 @@ class _AlertsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final padding = ResponsiveHelper.getPadding(context);
     final isDesktop = ResponsiveHelper.isDesktop(context);
     final notifications = ref.watch(appNotificationsProvider);
     final unreadCount = notifications.where((item) => !item.read).length;
@@ -4567,7 +4024,7 @@ class _AlertsScreen extends ConsumerWidget {
         14,
         8,
         14,
-        16 + MediaQuery.paddingOf(context).bottom,
+        (isDesktop ? 24 : 120) + MediaQuery.paddingOf(context).bottom,
       ),
       children: [
         HomeHero(
@@ -4590,7 +4047,7 @@ class _AlertsScreen extends ConsumerWidget {
                 icon: const Icon(Icons.check, size: 15),
                 label: const Text(
                   'Mark all read',
-                  style: TextStyle(fontSize: 10),
+                  style: TextStyle(fontSize: 12),
                 ),
               ),
               const SizedBox(width: 8),
@@ -4598,7 +4055,7 @@ class _AlertsScreen extends ConsumerWidget {
                 onPressed: () =>
                     ref.read(appNotificationsProvider.notifier).clearAll(),
                 icon: const Icon(Icons.delete_outline, size: 15),
-                label: const Text('Clear', style: TextStyle(fontSize: 10)),
+                label: const Text('Clear', style: TextStyle(fontSize: 12)),
               ),
             ],
           ),
@@ -4697,9 +4154,9 @@ class _NotificationTile extends StatelessWidget {
                     const SizedBox(width: 5),
                     Text(
                       _timeAgo(item.createdAt),
-                      style: const TextStyle(
-                        fontSize: 9,
-                        color: Color(0xFFA8BADA),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                     if (!item.read)
@@ -4712,10 +4169,10 @@ class _NotificationTile extends StatelessWidget {
                 const SizedBox(height: 5),
                 Text(
                   item.message,
-                  style: const TextStyle(
-                    fontSize: 11,
+                  style: TextStyle(
+                    fontSize: 12,
                     height: 1.3,
-                    color: Color(0xFFA8BADA),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 5),
@@ -4730,7 +4187,7 @@ class _NotificationTile extends StatelessWidget {
                   ),
                   child: Text(
                     category,
-                    style: TextStyle(color: item.color, fontSize: 9),
+                    style: TextStyle(color: item.color, fontSize: 12),
                   ),
                 ),
               ],
@@ -4757,6 +4214,7 @@ class _SettingsScreen extends ConsumerWidget {
     if (authService == null)
       return const Center(child: CircularProgressIndicator());
     final user = authService.currentUser;
+    ref.watch(authUserProvider);
     final assistantName =
         ref.watch(assistantNameProvider).asData?.value ?? defaultAssistantName;
 
@@ -5321,19 +4779,18 @@ class _SettingsScreen extends ConsumerWidget {
                             await authService.signOut();
                             ref.read(selectedNavIndexProvider.notifier).state =
                                 0;
+                            CacheService().clear();
+                            ref.read(appNotificationsProvider.notifier).clearAll();
+                            unawaited(ref.read(bleServiceProvider).disconnect());
+                            ref.invalidate(smartHomeDataProvider);
+                            ref.invalidate(esp32DeviceServiceProvider);
+                            ref.invalidate(esp32IpProvider);
                             ref.invalidate(assistantNameProvider);
                             ref.invalidate(userDataProvider);
                             ref.invalidate(userEsp32CodeProvider);
                             ref.invalidate(httpDataProvider);
-                            if (rootContext.mounted) {
-                              Navigator.of(
-                                rootContext,
-                                rootNavigator: true,
-                              ).pushNamedAndRemoveUntil(
-                                '/login',
-                                (route) => false,
-                              );
-                            }
+                            // The account listener closes all account-owned
+                            // pages and sheets once sign-out is delivered.
                           } catch (e) {
                             if (rootContext.mounted) {
                               _showSnack(
@@ -5387,7 +4844,7 @@ class _SettingsScreen extends ConsumerWidget {
         14,
         8,
         14,
-        12 + MediaQuery.paddingOf(context).bottom,
+        120 + MediaQuery.paddingOf(context).bottom,
       ),
       children: [
         const HomeHero(
@@ -5412,8 +4869,10 @@ class _SettingsScreen extends ConsumerWidget {
                       label: item.$2,
                       icon: item.$3,
                       selected: themeMode == item.$1,
-                      onTap: () =>
-                          ref.read(themeModeProvider.notifier).state = item.$1,
+                      onTap: () {
+                        ref.read(themeModeProvider.notifier).state = item.$1;
+                        unawaited(SharedPreferences.getInstance().then((prefs) => prefs.setString('appearance_theme', item.$1.name)).catchError((_) => false));
+                      },
                     ),
                   ),
                 ],
@@ -5470,7 +4929,7 @@ class _SettingsScreen extends ConsumerWidget {
               ),
               TextButton(
                 onPressed: showTestConnectionDialog,
-                child: const Text('Test', style: TextStyle(fontSize: 10)),
+                child: const Text('Test', style: TextStyle(fontSize: 12)),
               ),
             ],
           ),
@@ -5522,7 +4981,7 @@ class _SettingsScreen extends ConsumerWidget {
                 () => showAboutDialog(
                   context: context,
                   applicationName: 'Smart Home',
-                  applicationVersion: '2.11.0',
+                  applicationVersion: AppConfig.appVersion,
                   applicationIcon: const HomeGlowIcon(Icons.home_outlined),
                 ),
               ),

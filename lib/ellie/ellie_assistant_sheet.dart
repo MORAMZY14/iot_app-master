@@ -848,10 +848,18 @@ class _LocalAiManagerSheetState extends State<_LocalAiManagerSheet> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
     setState(() => _working = true);
-    await widget.service.removeModel();
-    if (mounted) setState(() => _working = false);
+    try {
+      await widget.service.removeModel();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not remove the local model: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
   }
 
   @override
@@ -1098,7 +1106,15 @@ class _LocalMusicLibrarySheetState extends State<_LocalMusicLibrarySheet> {
         ],
       ),
     );
-    if (confirmed == true) await widget.service.removeTrack(track);
+    if (confirmed != true || !mounted) return;
+    try {
+      await widget.service.removeTrack(track);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not remove ${track.title}: $error')),
+      );
+    }
   }
 
   @override
