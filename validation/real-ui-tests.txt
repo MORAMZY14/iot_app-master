@@ -1,0 +1,42 @@
+00:00 +0: loading /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/widget_test.dart
+00:00 +0: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/widget_test.dart: Android offline voices accept numeric flags and reject network voices
+00:00 +1: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/widget_test.dart: assistant names are compacted and validated
+00:00 +2: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/widget_test.dart: invalid or missing names fall back to Ellie
+00:00 +3: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/widget_test.dart: offline assistant answers without a remote model
+00:00 +4: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/widget_test.dart: offline assistant supports Arabic and deterministic time
+00:00 +5: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/widget_test.dart: local music parser selects a named offline song
+00:00 +6: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/widget_test.dart: local music parser handles bilingual transport commands
+00:00 +7: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/widget_test.dart: local model envelope extracts a safe device proposal
+00:00 +8: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/widget_test.dart: conversation output can never become a device command
+00:00 +9: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/widget_test.dart: unsafe model actions are discarded before ESP32 validation
+00:00 +10: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/widget_test.dart: model command guard preserves direction and named-device scope
+00:00 +11: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/assistant_context_test.dart: chat retains previous exchange and saved preferences
+00:00 +12: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/assistant_context_test.dart: commands cannot inherit old chat targets or preference instructions
+00:00 +13: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/assistant_context_test.dart: history retains whole recent pairs and can be reset
+00:00 +14: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/assistant_context_test.dart: thinking content cannot supply a hidden device command
+00:00 +15: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/room_photo_card_test.dart: (setUpAll)
+00:00 +15: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.dark
+00:01 +16: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.dark
+00:01 +17: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: login and sign up render and validate at 320px
+00:01 +18: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: login and sign up render and validate at 320px
+00:01 +19: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: login and sign up render and validate at 320px
+00:01 +20: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: login and sign up render and validate at 320px
+00:02 +21: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: login and sign up render and validate at 320px
+00:02 +22: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: login and sign up render and validate at 320px
+00:02 +23: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: home tabs preserve room controls and theme works
+00:03 +24: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: credentials validate before sending; secure and open networks
+00:03 +25: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: 01-splash actual Flutter screen
+00:03 +26: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: 02-login actual Flutter screen
+00:04 +27: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: 03-dashboard actual Flutter screen
+00:04 +28: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: 04-assistant actual Flutter screen
+00:04 +29: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: 05-energy actual Flutter screen
+00:05 +30: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: 06-alerts actual Flutter screen
+00:05 +31: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: 07-settings actual Flutter screen
+00:05 +32: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: 08-provision actual Flutter screen
+00:05 +33: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: 09-wifi actual Flutter screen
+00:06 +34: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: 10-modules actual Flutter screen
+00:06 +35: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: dashboard layout at 320.0 with 1.0x text
+00:06 +36: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: dashboard layout at 390.0 with 1.6x text
+00:07 +37: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: dashboard layout at 900.0 with 1.0x text
+00:07 +38: /workspace/scratch/d314c3673e4b/real-ui/iot_app-master-master/test/ui_redesign_test.dart: (tearDownAll)
+00:07 +38: All tests passed!

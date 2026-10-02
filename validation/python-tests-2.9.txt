@@ -1,0 +1,26 @@
+test_command_in_historical_conversation_rejected (test_conversations.ConversationTests.test_command_in_historical_conversation_rejected) ... ok
+test_dataset_files_disjoint (test_conversations.ConversationTests.test_dataset_files_disjoint) ... ok
+test_group_leak_rejected_even_with_different_prompts (test_conversations.ConversationTests.test_group_leak_rejected_even_with_different_prompts) ... ok
+test_languages_and_followups_share_split (test_conversations.ConversationTests.test_languages_and_followups_share_split) ... ok
+test_non_thinking_template_in_prompt_and_target (test_conversations.ConversationTests.test_non_thinking_template_in_prompt_and_target) ... ok
+test_partial_pair_rejected (test_conversations.ConversationTests.test_partial_pair_rejected) ... ok
+test_split_normalizes_punctuation_and_case (test_conversations.ConversationTests.test_split_normalizes_punctuation_and_case) ... ok
+test_bom_from_windows_editor (test_training_tools.TrainingToolsTests.test_bom_from_windows_editor) ... ok
+test_completion_mask_preserves_model_template (test_training_tools.TrainingToolsTests.test_completion_mask_preserves_model_template) ... ok
+test_latest_skips_incomplete_checkpoints (test_training_tools.TrainingToolsTests.test_latest_skips_incomplete_checkpoints) ... ok
+test_low_memory_profile_and_override (test_training_tools.TrainingToolsTests.test_low_memory_profile_and_override) ... ok
+test_malformed_jsonl_has_useful_error (test_training_tools.TrainingToolsTests.test_malformed_jsonl_has_useful_error) ... ok
+test_missing_checkpoint_fails_explicitly (test_training_tools.TrainingToolsTests.test_missing_checkpoint_fails_explicitly) ... ok
+test_output_schema_rejects_action_objects (test_training_tools.TrainingToolsTests.test_output_schema_rejects_action_objects) ... ok
+test_train_and_eval_are_valid_and_disjoint (test_training_tools.TrainingToolsTests.test_train_and_eval_are_valid_and_disjoint) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.162s
+
+OK
+OK: 1383 valid conversations in /workspace/scratch/d314c3673e4b/work/iot_app-master-master/training/dataset/conversation_train.jsonl
+OK: 164 valid conversations in /workspace/scratch/d314c3673e4b/work/iot_app-master-master/training/dataset/conversation_dev.jsonl
+OK: 181 valid conversations in /workspace/scratch/d314c3673e4b/work/iot_app-master-master/training/dataset/conversation_test.jsonl
+OK: 34 valid conversations in /tmp/tmphzyv09i7/bom.jsonl
+OK: 34 valid conversations in /workspace/scratch/d314c3673e4b/work/iot_app-master-master/training/dataset/smarthome_train.jsonl
+OK: 24 valid conversations in /workspace/scratch/d314c3673e4b/work/iot_app-master-master/training/dataset/smarthome_eval.jsonl

@@ -1,0 +1,4 @@
+OK: 34 valid conversations in /workspace/scratch/d314c3673e4b/work/iot_app-master-master/training/dataset/smarthome_train.jsonl
+Offline assistant integration contract: OK
+BLE service UUID: 4fafc201-1fb5-459e-8fcc-c5c9c331914b
+BLE command UUID: d8e3b8a2-4f5c-4b6e-9a2f-1a2b3c4d5e6f

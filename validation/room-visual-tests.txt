@@ -1,0 +1,7 @@
+00:00 +0: loading /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: room photo and actions at 320px, Brightness.dark
+00:02 +1: room photo and actions at 320px, Brightness.light
+00:02 +2: large text keeps room actions reachable
+00:02 +3: (tearDownAll)
+00:02 +3: All tests passed!

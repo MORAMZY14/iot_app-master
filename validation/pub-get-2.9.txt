@@ -1,0 +1,14 @@
+[1/10] Material Fonts                                               8.6s
+[2/10] Gradle Wrapper                                               8.5s
+[3/10] Flutter SDK
+  ├─ [1/5] sky_engine                                              11.2s
+  ├─ [2/5] flutter_gpu                                             11.8s
+  ├─ [3/5] flutter_patched_sdk                                     10.2s
+  ├─ [4/5] flutter_patched_sdk_product                             10.3s
+  └─ [5/5] linux-x64                                               11.4s
+[10/10] linux-x64/font-subset                                      10.2s
+Resolving dependencies...
+Downloading packages...
++ dinja 1.0.0
++ llamadart 0.8.22
+Changed 2 dependencies!

@@ -1,0 +1,18 @@
+00:00 +0: loading /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart
+00:00 +0: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: (setUpAll)
+00:00 +0: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.dark
+00:00 +1: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.dark
+00:00 +2: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.dark
+00:00 +3: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.dark
+00:00 +4: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.dark
+00:00 +5: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.dark
+00:00 +6: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.dark
+00:00 +7: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.dark
+00:00 +8: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.dark
+00:00 +9: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.dark
+00:00 +10: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.dark
+00:00 +11: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.dark
+00:00 +12: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: room photo and actions at 320px, Brightness.light
+00:00 +13: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: large text keeps room actions reachable
+00:01 +14: /workspace/scratch/d314c3673e4b/work/iot_app-master-master/test/room_photo_card_test.dart: (tearDownAll)
+00:01 +14: All tests passed!

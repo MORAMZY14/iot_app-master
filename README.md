@@ -1,4 +1,4 @@
-# SmartHome 2.12.0
+# SmartHome 2.12.1
 
 Updated Flutter mobile source with Material 3 screens, real room/device controls,
 light/dark/system themes, Firebase accounts, ESP32 HTTP/BLE control, and private
@@ -26,7 +26,7 @@ security completion are still required before public distribution.
 
 ## Prepare the mobile build
 
-Install Flutter **3.44.0** (Dart **3.12.0**) and JDK 17. From this directory:
+Install Flutter **3.47.6**, JDK 17 and Android SDK 36. From this directory:
 
 ```sh
 bash tool/prepare_dependencies.sh --refresh
@@ -49,9 +49,11 @@ flutter build apk --release --split-per-abi --obfuscate --split-debug-info=build
 
 Keep the symbols and Android mapping with the matching release. Production
 Android builds reject missing signing credentials and debug certificates.
-Use a Mac and your distribution team/profile for an installable iOS archive.
-The verification and manually dispatched Android release workflows are in
-`.github/workflows/`; they do not automatically publish stores or push tags.
+For an unsigned iOS release on a Mac, run `bash tool/build_ios_unsigned.sh`.
+This creates a `.app` ZIP without an Apple team, certificate or profile.
+The verification, signed Android release and unsigned iOS release workflows
+are in `.github/workflows/`; they do not automatically publish stores or push
+tags. Replace the included workflow files along with the app/native source.
 
 The LLM runs on the phone; training runs on the laptop. The ESP32 executes
 hardware commands rather than the language model. No cloud inference fallback

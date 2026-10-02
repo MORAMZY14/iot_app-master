@@ -1,11 +1,11 @@
 {
-    "name": "iot_app",
-    "short_name": "iot_app",
+    "name": "SmartHome",
+    "short_name": "SmartHome",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#070B16",
+    "theme_color": "#6C63FF",
+    "description": "Room-first smart-home control with a customer-named voice assistant.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

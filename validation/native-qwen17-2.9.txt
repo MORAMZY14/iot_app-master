@@ -1,0 +1,29 @@
+Running build hooks...flutter_gemma: Downloading litertlm native libs from https://github.com/DenisovAV/flutter_gemma/releases/download/native-v0.12.0-a/litertlm-linux_x86_64.tar.gz ...
+
+flutter_gemma: Checksum verified (litertlm-linux_x86_64.tar.gz)
+
+flutter_gemma: tar extraction failed: tar: ./libStreamProxy.so: Cannot change ownership to uid 501, gid 0: Invalid argument
+tar: ./libLiteRt.so: Cannot change ownership to uid 501, gid 0: Invalid argument
+tar: ./libLiteRtTopKWebGpuSampler.so: Cannot change ownership to uid 501, gid 0: Invalid argument
+tar: ./libGemmaModelConstraintProvider.so: Cannot change ownership to uid 501, gid 0: Invalid argument
+tar: ./libLiteRtWebGpuAccelerator.so: Cannot change ownership to uid 501, gid 0: Invalid argument
+tar: ./libLiteRtLm.so: Cannot change ownership to uid 501, gid 0: Invalid argument
+tar: .: Cannot change ownership to uid 501, gid 0: Invalid argument
+tar: Exiting with failure status due to previous errors
+
+
+flutter_gemma: Downloading qdrant_edge native libs from https://github.com/DenisovAV/flutter_gemma/releases/download/qdrant-edge-v0.7.2/qdrant-edge-linux_x86_64.tar.gz ...
+
+flutter_gemma: Checksum verified (qdrant-edge-linux_x86_64.tar.gz)
+
+flutter_gemma: tar extraction failed: tar: ./libqdrant_edge_ffi.so: Cannot change ownership to uid 1001, gid 1001: Invalid argument
+tar: .: Cannot change ownership to uid 1001, gid 1001: Invalid argument
+tar: Exiting with failure status due to previous errors
+
+
+Running build hooks...Loaded model in 3691 ms.
+Turn 1, 2327 ms: {"reply":"Hello Dina!","device_command":null}
+
+Turn 2, 1837 ms: {"reply":"مرحباً بمصر، باسمك المفضل.","device_command":null}
+
+PASS: native CPU inference, JSON output, two conversation turns.
